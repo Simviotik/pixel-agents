@@ -1,7 +1,7 @@
 # Pixel Agents manual hook server requests
 #
 # Usage:
-# 1. Start the extension so the local hook server is running.
+# 1. Start the VS Code extension or run `npx pixel-agents` so the local hook server is running.
 # 2. Copy `port` and `token` from `~/.pixel-agents/server.json` into the variables below.
 # 3. Set `cwd` to a workspace folder opened in the Extension Development Host,
 #    or enable "Watch All Sessions" in Pixel Agents.
@@ -16,7 +16,7 @@
 # - On Windows, use forward slashes in `cwd` or escape backslashes in the JSON string.
 
 @host = 127.0.0.1
-@port = 3000
+@port = 3100
 @token = paste-token-from-~/.pixel-agents/server.json
 @provider = claude
 @sessionId = manual-session-1

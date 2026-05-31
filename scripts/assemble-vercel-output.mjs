@@ -4,11 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 // Assembles the Vercel Build Output (.vercel/output/) for the hosted preview.
 //
-// Currently this deploys ONLY the combined Allure test report. The standalone
-// webview preview (formerly served at /webview/) was removed — it needs a mock
-// data layer to be useful on a static host and we don't need it for now. To
-// bring it back: restore the `dist/webview-preview` copy + the `/webview/`
-// override and re-add `build:webview:preview` to the `vercel:prepare` script.
+// This deploys only the combined Allure test report. A standalone webview
+// preview at /webview/ is deferred: it needs a mock data layer to be useful on
+// a static host. See tasks/WEBVIEW-PREVIEW-MOCK-MODE.md for the plan to add it.
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const reportDir = path.join(repoRoot, 'allure-report', 'allure');

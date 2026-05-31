@@ -152,34 +152,21 @@ export async function closeAgentFromOverlay(
       : getOverlayByText(frame, options.text ?? '').first();
   await expect(overlay).toBeVisible({ timeout });
 
-  const canvas = frame.locator('canvas');
-  const canvasBox = await canvas.boundingBox();
-  const overlayBox = await overlay.boundingBox();
-  if (!canvasBox || !overlayBox) {
-    throw new Error('Missing canvas or overlay bounding box while closing agent');
-  }
+  // Selecting an agent is what reveals its "Close agent" (×) button. The
+  // production path selects via a canvas hit-test on the sprite; driving that
+  // from a test means computing pixel offsets below the overlay, which is
+  // geometry-brittle and previously caused retry-flakes (e.g. the "close via
+  // X" lifecycle test). Instead, select deterministically through the test
+  // hook: it sets officeState.selectedAgentId (the same state a click sets),
+  // and ToolOverlay re-renders every rAF, so the × button surfaces and becomes
+  // clickable on the next frame. The overlay carries its agent id as
+  // data-agent-id, so the text-based lookup path resolves an id too.
+  const agentId = options.agentId ?? Number(await overlay.getAttribute('data-agent-id'));
+  await frame.evaluate((id) => {
+    window.__pixelAgentsTestHooks?.selectAgent?.(id);
+  }, agentId);
 
-  const clickX = overlayBox.x - canvasBox.x + overlayBox.width / 2;
-  const clickOffsets = [overlayBox.height + 16, overlayBox.height + 28, 60];
-
-  for (const clickOffset of clickOffsets) {
-    const clickY = Math.min(canvasBox.height - 4, overlayBox.y - canvasBox.y + clickOffset);
-    await canvas.click({
-      position: {
-        x: clickX,
-        y: clickY,
-      },
-    });
-
-    const closeButton = overlay.locator('button[title="Close agent"]');
-    try {
-      await expect(closeButton).toBeVisible({ timeout: 1_500 });
-      await closeButton.click();
-      return;
-    } catch {
-      // Retry with a slightly different hit position if the first click missed the sprite.
-    }
-  }
-
-  throw new Error('Failed to select agent overlay before attempting close');
+  const closeButton = overlay.locator('button[title="Close agent"]');
+  await expect(closeButton).toBeVisible({ timeout });
+  await closeButton.click();
 }

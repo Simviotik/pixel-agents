@@ -128,7 +128,6 @@ e2e/                                 Playwright suite (real VS Code + mock-claud
     team.ts                          Team config seeding + teammate helpers
     allure-labels.ts                 @area:<tag> → Allure epic
   tests/
-    agent-spawn.spec.ts              Smoke: + Agent creates JSONL session
     claude/hooks-on/                 basic.spec.ts, lifecycle.spec.ts, teams.spec.ts
     claude/hooks-off/                lifecycle.spec.ts, matrix.spec.ts
     standalone/                      hooks.spec.ts
@@ -138,9 +137,8 @@ scripts/
   generate-messages.ts               AsyncAPI → core/src/messages.ts via Modelina (with CI drift check)
   run-e2e.mjs                        Playwright wrapper (run-id namespacing, video attach flags)
   generate-e2e-inventory.mjs         Splices test list into e2e/README.md (CI drift check)
-  build-webview-preview.mjs          Standalone webview build for hosted preview
   build-allure-report.mjs            Combine e2e+server+webview Allure results
-  assemble-vercel-output.mjs         Stage /webview/ + /reports/allure/ for Vercel deploy
+  assemble-vercel-output.mjs         Stage /reports/allure/ for Vercel deploy
   asset-manager.html                 Unified furniture editor (positions + metadata)
   jsonl-viewer.html                  Standalone JSONL transcript inspector
   wall-tile-editor.html              Wall sprite editor
@@ -441,11 +439,11 @@ Run: `npm run test:webview`.
 
 ### End-to-end (Playwright)
 
-`e2e/` — Playwright tests against a real VS Code Electron instance + a standalone Fastify server. **48+ tests across 7 spec files**, sharded 4 ways on CI (Linux) plus single-job macOS and Windows runs.
+`e2e/` — Playwright tests against a real VS Code Electron instance + a standalone Fastify server. **47 tests across 6 spec files**, run on CI as a 3-OS x 3-shard matrix (Linux, macOS, Windows; each shard runs ~1/3 of the suite at `--workers=1`).
 
 | Area (`@area:<tag>`) | Specs                                                                     | What                                                                                                                                                               |
 | -------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `spawn`              | `agent-spawn.spec.ts`                                                     | "+ Agent" creates JSONL session, character renders                                                                                                                 |
+| `spawn`              | `claude/hooks-on/basic.spec.ts`                                           | "+ Agent" creates JSONL session, character renders, external session adoption                                                                                      |
 | `lifecycle`          | `claude/hooks-on/lifecycle.spec.ts`, `claude/hooks-off/lifecycle.spec.ts` | /clear, --resume, reassignment, stale cleanup, subagent visibility, background routing                                                                             |
 | `cross-cutting`      | spread across both lifecycle files                                        | turn_duration cleanup, permission timer cancellation, sub-agent permission bubble, sound, label persistence, hook install/uninstall, layout editor save round-trip |
 | `teams`              | `claude/hooks-on/teams.spec.ts`                                           | Internal/external lead + tmux/inline teammate routing                                                                                                              |
@@ -453,6 +451,8 @@ Run: `npm run test:webview`.
 | `standalone`         | `standalone/hooks.spec.ts`                                                | npx pixel-agents serves SPA, WebSocket protocol, hook-driven lifecycle in browser                                                                                  |
 
 **Mock claude**: Tests never invoke real `claude`. A bash script (`e2e/fixtures/mock-claude`) is copied into an isolated `bin/` and prepended to `PATH`. The scenario runner (`mock-claude-runner.cjs`) honors `claudeScenario(...).at(ms).appendJsonl(record).emitHook(event).holdOpenFor(ms).build()` to drive timed JSONL writes and hook events.
+
+**Authoring rules (normative)**: before writing a new spec, read `e2e/README.md` → "Mocking model & rules". It is the single source of truth for the process-boundary principle, the append-only transcript rule, the assert-on-visible-outcomes discipline, and the one standalone-server exception. New tests must follow that model.
 
 **Isolation**: each test gets its own `tmpHome`, workspace directory, VS Code `--user-data-dir`, and mock-log file. No state leaks between tests.
 
@@ -509,7 +509,7 @@ The webview Vite dev server is **not** included in `npm run watch` — it has to
 
 ### CI
 
-Single workflow runs (in order): install, lint, `asyncapi:validate`, `asyncapi:generate` + drift check, `e2e:inventory` + drift check, `check-types`, `test:server`, `test:webview`, `e2e` (Linux 4 shards + macOS + Windows), `package`, Vercel preview deploy (gated on secrets; gracefully skips on forks).
+Single workflow runs (in order): install, lint, `asyncapi:validate`, `asyncapi:generate` + drift check, `e2e:inventory` + drift check, `check-types`, `test:server`, `test:webview`, `e2e` (3-OS x 3-shard matrix: Linux, macOS, Windows), `package`, Vercel preview deploy (gated on secrets; gracefully skips on forks, non-blocking on failure).
 
 The drift checks are the central guarantees: `core/asyncapi.yaml` ↔ `core/src/messages.ts` stay in lockstep; `e2e/README.md` stays in sync with the spec list.
 
