@@ -200,12 +200,12 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 
 - `e2e/standalone/hooks.spec.ts:10` — propagates hook-driven lifecycle into the browser UI (Standalone / hooks)
 - `e2e/standalone/multi-server-hooks.spec.ts:31` — extension and standalone both stay hook-driven without cross-contamination (Standalone / multi-server hooks)
-- `e2e/standalone/ui.spec.ts:23` — closeAgent despawns the character (Standalone / UI)
-- `e2e/standalone/ui.spec.ts:57` — Debug View renders JSONL diagnostics in standalone (Standalone / UI)
-- `e2e/standalone/ui.spec.ts:91` — adding an external asset directory triggers a live asset reload (Standalone / UI)
-- `e2e/standalone/ui.spec.ts:115` — browser Export Layout downloads the layout file (Standalone / UI)
-- `e2e/standalone/ui.spec.ts:130` — browser Import Layout applies the chosen file (Standalone / UI)
-- `e2e/standalone/ui.spec.ts:165` — ConnectionIndicator appears when the WebSocket connection drops (Standalone / UI)
+- `e2e/standalone/ui.spec.ts:27` — closeAgent despawns the character (Standalone / UI)
+- `e2e/standalone/ui.spec.ts:61` — Debug View renders JSONL diagnostics in standalone (Standalone / UI)
+- `e2e/standalone/ui.spec.ts:95` — adding an external asset directory triggers a live asset reload (Standalone / UI)
+- `e2e/standalone/ui.spec.ts:122` — browser Export Layout downloads the layout file (Standalone / UI)
+- `e2e/standalone/ui.spec.ts:137` — browser Import Layout applies the chosen file (Standalone / UI)
+- `e2e/standalone/ui.spec.ts:172` — ConnectionIndicator appears when the WebSocket connection drops (Standalone / UI)
 
 ### `@area:areas` (8 tests)
 
