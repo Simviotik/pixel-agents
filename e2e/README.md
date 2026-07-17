@@ -242,7 +242,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/hooks.spec.ts:10` — propagates hook-driven lifecycle into the browser UI (Standalone / hooks)
 - `e2e/standalone/multi-server-hooks.spec.ts:31` — extension and standalone both stay hook-driven without cross-contamination (Standalone / multi-server hooks)
 - `e2e/standalone/terminal.spec.ts:20` — browser-launched agent gets a PTY terminal, hooks route to its character, close cleans up (Standalone / terminal)
-- `e2e/standalone/terminal.spec.ts:85` — --no-terminal keeps the office watch-only: launch disabled, hook-driven agents still render (Standalone / terminal disabled)
+- `e2e/standalone/terminal.spec.ts:88` — --no-terminal keeps the office watch-only: launch disabled, hook-driven agents still render (Standalone / terminal disabled)
 - `e2e/standalone/ui.spec.ts:27` — closeAgent despawns the character (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:61` — Debug View renders JSONL diagnostics in standalone (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:95` — adding an external asset directory triggers a live asset reload (Standalone / UI)
