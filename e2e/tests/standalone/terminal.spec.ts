@@ -15,20 +15,18 @@ import { setSettings } from '../../helpers/webview';
  * the mock performs all timed actions; the test only clicks and observes.
  */
 test.describe('Standalone / terminal', () => {
+  // The PTY spawns `claude` (the mock's bash wrapper) directly, not through a
+  // shell. Windows would need a cmd.exe hop to run the .cmd shim — untested
+  // on this branch (design doc "Risks"), so the launch path is POSIX-only here.
+  // Describe-level: the standalone fixture launches the mock-PATH host BEFORE
+  // a test body runs, so an in-body skip would be too late to prevent it.
+  test.skip(process.platform === 'win32', 'PTY spawn of the .cmd mock shim is untested on Windows');
   test.use({ standaloneOptions: { mockClaude: true } });
 
   test('browser-launched agent gets a PTY terminal, hooks route to its character, close cleans up @area:standalone', async ({
     page,
     standalone,
   }) => {
-    // The PTY spawns `claude` (the mock's bash wrapper) directly, not through a
-    // shell. Windows would need a cmd.exe hop to run the .cmd shim — untested
-    // on this branch (design doc "Risks"), so the launch path is POSIX-only here.
-    test.skip(
-      process.platform === 'win32',
-      'PTY spawn of the .cmd mock shim is untested on Windows',
-    );
-
     await setSettings(page, { alwaysShowLabels: true });
     await waitForClaudeHookSetup(standalone.tmpHome);
 

@@ -100,7 +100,14 @@ export function resolvePtyModule(
       continue;
     }
 
-    const spawnError = probeSpawn(loaded);
+    // Windows: a successful import is the whole test. The spawn probe exists
+    // for the POSIX-only failure mode where npm's script gating skips the
+    // spawn-helper chmod (case 2 above) — ConPTY has no helper binary, so
+    // there is no import-succeeds-spawn-fails mode to probe for. The probe is
+    // also a hazard there: spawning a ConPTY and killing it immediately races
+    // the conpty agent's socket connect and can intermittently crash the whole
+    // process (observed as standalone hosts dying at boot on Windows CI).
+    const spawnError = process.platform === 'win32' ? null : probeSpawn(loaded);
     if (spawnError) {
       // The npm-script-gating case lands here: imported fine, cannot spawn.
       failures.push(`${id}: loaded but cannot spawn (${spawnError})`);

@@ -310,6 +310,18 @@ export async function launchStandalone(
     await stopProcess(hostProcess);
     if (ownsHome) fs.rmSync(tmpHome, { recursive: true, force: true });
     if (ownsWorkspace) fs.rmSync(workspaceDir, { recursive: true, force: true });
-    throw error;
+    // Setup failures never reach the fixture's log-attaching teardown, so fold
+    // the host's output into the error itself — otherwise a host that dies at
+    // boot on CI leaves nothing to diagnose but a connection-refused message.
+    const hostLogs = [hostStdout.trim(), hostStderr.trim()]
+      .filter((value) => value.length > 0)
+      .join('\n');
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `launchStandalone failed: ${message}\n--- standalone host output ---\n${
+        hostLogs.length > 0 ? hostLogs : '(none)'
+      }`,
+      { cause: error },
+    );
   }
 }

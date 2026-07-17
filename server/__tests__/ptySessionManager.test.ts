@@ -294,7 +294,6 @@ describe('PtySession streaming', () => {
 
 /** Drop ANSI escape sequences so assertions read the visible text only. */
 function stripAnsi(data: string): string {
-   
   return data.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b[()][A-Z0-9]|\x1b[a-zA-Z=><]/g, '');
 }
 
