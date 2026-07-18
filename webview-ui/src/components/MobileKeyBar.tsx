@@ -2,9 +2,11 @@ import type { TouchEvent as ReactTouchEvent } from 'react';
 import { useRef } from 'react';
 
 import {
-  MOBILE_ARROW_SLIDE_STEP_PX,
   MOBILE_KEY_BAR_KEYS,
+  MOBILE_TRACKPAD_STEP_PX,
   TERMINAL_SEQ_ARROW_DOWN,
+  TERMINAL_SEQ_ARROW_LEFT,
+  TERMINAL_SEQ_ARROW_RIGHT,
   TERMINAL_SEQ_ARROW_UP,
   TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
@@ -21,8 +23,8 @@ interface MobileKeyBarProps {
  * iOS form-assistant bar (prev/next arrows + Done) is WebKit chrome that web
  * content cannot alter or remove, so this row sits directly above it and
  * supplies the keys a Claude Code TUI actually needs — slash menu, shift+tab
- * mode cycle, esc interrupt, menu arrows — none of which exist on the iOS
- * keyboard.
+ * mode cycle, esc interrupt, an arrow trackpad, line break — none of which
+ * exist on the iOS keyboard.
  */
 export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
   // The bar scrolls horizontally when the keys outgrow a narrow screen, so a
@@ -43,42 +45,50 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
       Math.abs(t.clientY - s.y) <= TOUCH_TAP_MAX_MOVE_PX
     );
   };
-  // Arrow keys act as a vertical trackpad, echoing the iOS space-bar
-  // gesture: the touch sends its own arrow immediately, then holding and
-  // sliding repeats up/down arrows every MOBILE_ARROW_SLIDE_STEP_PX of
-  // travel, in whichever direction the finger moves — so one press-and-drag
-  // walks a /resume or /model menu. `sent` tracks emitted steps so backing
-  // up retraces them.
-  const slideRef = useRef<{ startY: number; sent: number } | null>(null);
-  // No preventDefault here: React registers touchstart passively, so it
-  // would be a no-op anyway. The touch-none/select-none classes keep iOS's
-  // long-press machinery off the held key, and onArrowTouchEnd's
-  // preventDefault (touchend is non-passive) suppresses the synthesized
-  // click.
-  const onArrowTouchStart = (sequence: string) => (e: ReactTouchEvent) => {
+  // The trackpad key echoes the iOS space-bar gesture in four directions:
+  // press, hold, and slide anywhere — every MOBILE_TRACKPAD_STEP_PX of
+  // travel emits the matching arrow, each axis independent, retracing when
+  // the finger backs up. One drag walks a /resume menu or the input-line
+  // cursor. A plain tap deliberately does nothing (the step threshold
+  // doubles as drift tolerance). No preventDefault on touchstart/move —
+  // React registers those passively, so it would be a no-op; touch-none/
+  // select-none keep iOS gestures off the held key, and touchend's
+  // preventDefault (non-passive) keeps the keyboard up.
+  const padRef = useRef<{ startX: number; startY: number; sentX: number; sentY: number } | null>(
+    null,
+  );
+  const onPadTouchStart = (e: ReactTouchEvent) => {
     const t = e.touches[0];
     if (!t) return;
-    slideRef.current = { startY: t.clientY, sent: 0 };
-    onKey(sequence);
+    padRef.current = { startX: t.clientX, startY: t.clientY, sentX: 0, sentY: 0 };
   };
-  const onArrowTouchMove = (e: ReactTouchEvent) => {
-    const s = slideRef.current;
+  const onPadTouchMove = (e: ReactTouchEvent) => {
+    const s = padRef.current;
     const t = e.touches[0];
     if (!s || !t) return;
-    const steps = Math.trunc((t.clientY - s.startY) / MOBILE_ARROW_SLIDE_STEP_PX);
-    while (s.sent < steps) {
+    const stepsX = Math.trunc((t.clientX - s.startX) / MOBILE_TRACKPAD_STEP_PX);
+    const stepsY = Math.trunc((t.clientY - s.startY) / MOBILE_TRACKPAD_STEP_PX);
+    while (s.sentY < stepsY) {
       onKey(TERMINAL_SEQ_ARROW_DOWN);
-      s.sent++;
+      s.sentY++;
     }
-    while (s.sent > steps) {
+    while (s.sentY > stepsY) {
       onKey(TERMINAL_SEQ_ARROW_UP);
-      s.sent--;
+      s.sentY--;
+    }
+    while (s.sentX < stepsX) {
+      onKey(TERMINAL_SEQ_ARROW_RIGHT);
+      s.sentX++;
+    }
+    while (s.sentX > stepsX) {
+      onKey(TERMINAL_SEQ_ARROW_LEFT);
+      s.sentX--;
     }
   };
-  const onArrowTouchEnd = (e: ReactTouchEvent) => {
-    slideRef.current = null;
+  const onPadTouchEnd = (e: ReactTouchEvent) => {
+    padRef.current = null;
     // Keep the keyboard: swallow the synthesized mousedown that would blur
-    // the terminal's textarea. The arrow was already sent on touchstart.
+    // the terminal's textarea.
     e.preventDefault();
   };
   // min-w-fit keeps labels from squishing; flex-1 stretches the keys to fill
@@ -91,15 +101,15 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
     // page (iOS pans the layout viewport while the keyboard is up), which
     // pan-x alone already rules out.
     <div className="shrink-0 flex items-stretch gap-6 px-8 py-6 bg-bg border-t-2 border-border overflow-x-auto touch-pan-x">
-      {MOBILE_KEY_BAR_KEYS.map(({ label, sequence, slideArrows }) => (
+      {MOBILE_KEY_BAR_KEYS.map(({ label, sequence, trackpad }) => (
         <button
           key={label}
-          onTouchStart={slideArrows ? onArrowTouchStart(sequence) : onKeyTouchStart}
-          onTouchMove={slideArrows ? onArrowTouchMove : undefined}
+          onTouchStart={trackpad ? onPadTouchStart : onKeyTouchStart}
+          onTouchMove={trackpad ? onPadTouchMove : undefined}
           onTouchCancel={
-            slideArrows
+            trackpad
               ? () => {
-                  slideRef.current = null;
+                  padRef.current = null;
                 }
               : undefined
           }
@@ -107,19 +117,19 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
           // would blur the terminal's textarea and dismiss the keyboard — the
           // key is sent here and the suppressed click never fires.
           onTouchEnd={
-            slideArrows
-              ? onArrowTouchEnd
+            trackpad
+              ? onPadTouchEnd
               : (e) => {
                   e.preventDefault();
-                  if (endedAsTap(e)) onKey(sequence);
+                  if (endedAsTap(e) && sequence !== undefined) onKey(sequence);
                 }
           }
-          // Mouse path (desktop emulation): block the focus steal on mousedown,
-          // send on click. Touch never double-sends an arrow here — the
-          // touchend preventDefault suppresses the synthesized click.
+          // Mouse path (desktop emulation): block the focus steal on
+          // mousedown, send on click. The trackpad key has no click action —
+          // desktop has real arrow keys.
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onKey(sequence)}
-          className={`${keyClass}${slideArrows ? ' touch-none select-none' : ''}`}
+          onClick={sequence !== undefined ? () => onKey(sequence) : undefined}
+          className={`${keyClass}${trackpad ? ' touch-none select-none' : ''}`}
         >
           {label}
         </button>

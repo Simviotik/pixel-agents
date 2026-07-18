@@ -387,28 +387,31 @@ export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
  *  raw bytes written to the PTY: shift+tab is CSI Z (back-tab). */
 export const TERMINAL_SEQ_ARROW_UP = '\x1b[A';
 export const TERMINAL_SEQ_ARROW_DOWN = '\x1b[B';
+export const TERMINAL_SEQ_ARROW_RIGHT = '\x1b[C';
+export const TERMINAL_SEQ_ARROW_LEFT = '\x1b[D';
 export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
   label: string;
-  sequence: string;
-  /** Press-hold-slide vertically repeats up/down arrows with the finger,
-   *  echoing the iOS space-bar trackpad (whose real caret gestures can't
-   *  reach xterm — its textarea must stay empty for input diffing). */
-  slideArrows?: boolean;
+  /** Byte sequence a tap writes to the PTY. Absent on the trackpad key — a
+   *  plain tap there deliberately does nothing. */
+  sequence?: string;
+  /** Press-hold-slide emits arrow keys with the finger in all four
+   *  directions, echoing the iOS space-bar trackpad (whose real caret
+   *  gesture can't reach xterm — its textarea must stay empty for input
+   *  diffing). Drives Claude Code's TUI menus (/resume, /model) and the
+   *  input-line cursor; the iOS keyboard has no arrows of its own. */
+  trackpad?: boolean;
 }> = [
   { label: '/', sequence: '/' },
   { label: 'shift+tab', sequence: '\x1b[Z' },
   { label: 'esc', sequence: '\x1b' },
-  // Arrow keys drive Claude Code's TUI menus (/resume, /model) — the iOS
-  // keyboard has no arrows, and taps don't reach the TUI as clicks.
-  { label: '↑', sequence: TERMINAL_SEQ_ARROW_UP, slideArrows: true },
-  { label: '↓', sequence: TERMINAL_SEQ_ARROW_DOWN, slideArrows: true },
+  { label: '✜', trackpad: true },
   // Line break without submitting: Claude Code's backslash+Enter escape —
   // its universal form (shift+enter needs a /terminal-setup rebind that
   // can't exist on a phone keyboard).
   { label: '↵', sequence: '\\\r' },
 ];
-/** Finger travel per repeated arrow while sliding from an arrow key. */
-export const MOBILE_ARROW_SLIDE_STEP_PX = 16;
+/** Finger travel per emitted arrow while sliding on the trackpad key. */
+export const MOBILE_TRACKPAD_STEP_PX = 16;
 /** visualViewport.height within this many px of innerHeight = keyboard closed
  *  (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
