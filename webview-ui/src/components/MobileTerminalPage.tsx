@@ -41,7 +41,13 @@ export function MobileTerminalPage({
         </div>
       )}
       {agentIds.map((agentId) => (
-        <div key={agentId} className="absolute inset-4">
+        // Inactive wrappers must not hit-test: they are full-size transparent
+        // overlays stacked in DOM order, so a later agent's empty wrapper
+        // would otherwise swallow every tap meant for an earlier active pane.
+        <div
+          key={agentId}
+          className={`absolute inset-4 ${agentId === activeId ? '' : 'pointer-events-none'}`}
+        >
           <TerminalPane
             agentId={agentId}
             isActive={agentId === activeId}
