@@ -214,10 +214,13 @@
     animation: pixel-pulse 1.5s ease-in-out infinite;
   }
 
-  /* Mobile card bar: lift its content clear of the iPhone home indicator
-     (safe-area is 0 everywhere else, so this is inert on desktop). */
+  /* Mobile card bar: keep the cards clear of the iPhone home indicator, but
+     only by HALF the inset — the full ~34px reads as dead space, and unlike
+     the status bar the bottom zone still takes taps (only the swipe gesture
+     lives there). Safe-area is 0 everywhere else, so this is inert on
+     desktop. */
   .mobile-safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) / 2);
   }
 
   /* Top-anchored floating chrome (Settings, view toggle, connection pill):
