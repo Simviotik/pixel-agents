@@ -444,6 +444,8 @@ function App() {
       lastT: 0,
       velocity: 0,
       width: 0,
+      armedTarget: null as EventTarget | null,
+      synthetic: false,
     };
     const findT = (list: TouchList) => {
       for (let i = 0; i < list.length; i++) {
@@ -451,7 +453,61 @@ function App() {
       }
       return null;
     };
+    // Terminal rows are rebuilt on every repaint, and WebKit keeps addressing
+    // a gesture's events to its touchstart node — detached, they stop
+    // propagating through the shell, which both froze a claimed swipe and
+    // left sw.id armed forever (blocking every later swipe). Same cure as the
+    // terminal's own gestures: rescue listeners bound to the armed target
+    // keep the stream, and only fire when the shell can no longer see it.
+    const dMove = (e: Event) => {
+      if (e.target instanceof Node && shell.contains(e.target)) return;
+      onMove(e as TouchEvent);
+    };
+    const dEnd = (e: Event) => {
+      if (e.target instanceof Node && shell.contains(e.target)) return;
+      onEnd(e as TouchEvent);
+    };
+    const dCancel = (e: Event) => {
+      if (e.target instanceof Node && shell.contains(e.target)) return;
+      onCancel(e as TouchEvent);
+    };
+    const release = () => {
+      sw.id = -1;
+      sw.claimed = false;
+      if (sw.armedTarget) {
+        sw.armedTarget.removeEventListener('touchmove', dMove);
+        sw.armedTarget.removeEventListener('touchend', dEnd);
+        sw.armedTarget.removeEventListener('touchcancel', dCancel);
+        sw.armedTarget = null;
+      }
+    };
+    // When the swipe claims the gesture, tell whatever was underneath (the
+    // terminal's scroll/long-press, the canvas pan) that its touch is over —
+    // a real bubbling touchcancel cleans their state through the same paths
+    // a system cancel would, attached or detached.
+    const cancelUnderlying = (t: Touch) => {
+      const target = sw.armedTarget;
+      if (!target) return;
+      sw.synthetic = true;
+      try {
+        target.dispatchEvent(
+          new TouchEvent('touchcancel', {
+            bubbles: true,
+            changedTouches: [t],
+            touches: [],
+            targetTouches: [],
+          }),
+        );
+      } catch {
+        // No TouchEvent constructor: underlying gestures self-heal on their
+        // next touch instead.
+      }
+      sw.synthetic = false;
+    };
     const onStart = (e: TouchEvent) => {
+      // Self-heal a stale arm whose end was never delivered (its target
+      // detached before the finger lifted).
+      if (sw.id !== -1 && !findT(e.touches)) release();
       if (sw.id !== -1) return;
       const t = e.changedTouches[0];
       if (!t) return;
@@ -470,6 +526,12 @@ function App() {
       sw.lastT = e.timeStamp;
       sw.velocity = 0;
       sw.width = rect.width;
+      sw.armedTarget = e.target;
+      if (e.target) {
+        e.target.addEventListener('touchmove', dMove, { passive: false });
+        e.target.addEventListener('touchend', dEnd);
+        e.target.addEventListener('touchcancel', dCancel);
+      }
     };
     const onMove = (e: TouchEvent) => {
       if (sw.id === -1) return;
@@ -479,14 +541,18 @@ function App() {
       const dy = t.clientY - sw.startY;
       if (!sw.claimed) {
         if (Math.abs(dy) > MOBILE_EDGE_SWIPE_SLOP_PX && Math.abs(dy) >= Math.abs(dx)) {
-          sw.id = -1; // vertical intent — hand the touch back for good
+          release(); // vertical intent — hand the touch back for good
           return;
         }
         if (Math.abs(dx) < MOBILE_EDGE_SWIPE_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
         sw.claimed = true;
         track.style.transition = 'none';
+        cancelUnderlying(t);
       }
       e.stopPropagation();
+      // The armed target may carry the terminal's own rescue listeners;
+      // stopPropagation can't silence same-node listeners, this can.
+      e.stopImmediatePropagation();
       if (e.cancelable) e.preventDefault();
       const dt = Math.max(1, e.timeStamp - sw.lastT);
       sw.velocity = 0.8 * ((t.clientX - sw.lastX) / dt) + 0.2 * sw.velocity;
@@ -506,9 +572,10 @@ function App() {
       if (sw.id === -1 || !findT(e.changedTouches)) return;
       const { claimed, velocity, width } = sw;
       const dx = sw.lastX - sw.startX;
-      sw.id = -1;
+      release();
       if (!claimed) return;
       e.stopPropagation();
+      e.stopImmediatePropagation();
       const dir = toTerminal ? -1 : 1;
       const commit =
         dx * dir > width * MOBILE_EDGE_SWIPE_COMMIT_RATIO ||
@@ -523,9 +590,10 @@ function App() {
       }
     };
     const onCancel = (e: TouchEvent) => {
+      if (sw.synthetic) return;
       if (sw.id === -1 || !findT(e.changedTouches)) return;
       const { claimed } = sw;
-      sw.id = -1;
+      release();
       if (claimed) settleBack();
     };
     shell.addEventListener('touchstart', onStart, { capture: true, passive: false });
@@ -533,6 +601,7 @@ function App() {
     shell.addEventListener('touchend', onEnd, { capture: true });
     shell.addEventListener('touchcancel', onCancel, { capture: true });
     return () => {
+      release();
       shell.removeEventListener('touchstart', onStart, { capture: true });
       shell.removeEventListener('touchmove', onMove, { capture: true });
       shell.removeEventListener('touchend', onEnd, { capture: true });
