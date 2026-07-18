@@ -722,7 +722,7 @@ function App() {
       {/* Mobile: Settings floats top-left (the layout editor stays desktop-
             only — its tools are drag/hover-driven). */}
       {isMobile && !isDebugMode && (
-        <div className="absolute top-8 left-8 z-20">
+        <div className="absolute mobile-safe-top left-8 z-20">
           <Button
             size="sm"
             variant={isSettingsOpen ? 'active' : 'default'}
@@ -781,7 +781,7 @@ function App() {
 
             {/* View toggle — pinned outside the track so it never slides. */}
             {terminalAvailable && (
-              <div className="absolute top-8 right-8 z-40">
+              <div className="absolute mobile-safe-top right-8 z-40">
                 <Button
                   size="sm"
                   className="border-border! shadow-pixel"

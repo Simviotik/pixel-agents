@@ -220,6 +220,19 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  /* Top-anchored floating chrome (Settings, view toggle, connection pill):
+     in a Home-Screen PWA with viewport-fit=cover the page starts under the
+     iOS status bar, so the usual 8px top offset lands beneath the clock.
+     env() is 0 in browser tabs and on desktop, where this equals top-8. */
+  .mobile-safe-top {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+  }
+
+  /* Same, for the mobile terminal pane wrappers (4px base, matches inset-4). */
+  .mobile-safe-pane-top {
+    top: calc(env(safe-area-inset-top, 0px) + 4px);
+  }
+
   /* Scroll containers whose overflow is obvious from clipped content (the
      mobile card bar) — a scrollbar strip would just eat row height. */
   .no-scrollbar {

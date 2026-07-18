@@ -46,7 +46,9 @@ export function MobileTerminalPage({
         // would otherwise swallow every tap meant for an earlier active pane.
         <div
           key={agentId}
-          className={`absolute inset-4 ${agentId === activeId ? '' : 'pointer-events-none'}`}
+          className={`absolute left-4 right-4 bottom-4 mobile-safe-pane-top ${
+            agentId === activeId ? '' : 'pointer-events-none'
+          }`}
         >
           <TerminalPane
             agentId={agentId}
