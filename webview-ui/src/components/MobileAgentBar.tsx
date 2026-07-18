@@ -222,7 +222,10 @@ export function MobileAgentBar({
   };
 
   return (
-    <div className="shrink-0 bg-bg border-t-2 border-border mobile-safe-bottom">
+    // No safe-area padding: the cards keep the same 6px below as above. The
+    // home indicator floats over the bar's bottom edge, but taps still land —
+    // iOS only claims the swipe gesture there.
+    <div className="shrink-0 bg-bg border-t-2 border-border">
       <div className="flex items-stretch gap-6 px-8 py-6">
         {/* Launch card pinned on the left; only the agent cards scroll. */}
         <button
