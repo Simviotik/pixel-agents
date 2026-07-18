@@ -11,6 +11,7 @@ import {
   TERMINAL_RESIZE_DEBOUNCE_MS,
   TERMINAL_SCROLLBACK_LINES,
   TERMINAL_THEME,
+  TOUCH_TAP_MAX_DURATION_MS,
   TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
@@ -109,14 +110,16 @@ export function TerminalPane({
     // into xterm's own wheel pipeline, which already routes every regime
     // correctly: mouse reports to the TUI when tracking is on (Claude Code
     // scrolls its transcript), viewport scrollback when off, arrow keys on
-    // the alt screen. One wheel event per row-height of drag, so a tick here
-    // equals one desktop wheel line. Capture-phase stopPropagation starves
-    // xterm's native touch path, which would otherwise double-scroll in the
-    // tracking-off case.
+    // the alt screen. One row-height of drag = one DOM_DELTA_LINE wheel tick,
+    // exactly one desktop wheel line in every regime (pixel deltas would ride
+    // xterm's measured cell height and its partial-scroll accumulator).
+    // Capture-phase stopPropagation starves xterm's native touch path, which
+    // would otherwise double-scroll in the tracking-off case.
     const flick = {
       tracking: false,
       engaged: false,
       startY: 0,
+      startT: 0,
       lastX: 0,
       lastY: 0,
       lastT: 0,
@@ -142,8 +145,8 @@ export function TerminalPane({
       for (let i = 0; i < Math.abs(ticks); i++) {
         target.dispatchEvent(
           new WheelEvent('wheel', {
-            deltaY: Math.sign(ticks) * rowH,
-            deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+            deltaY: Math.sign(ticks),
+            deltaMode: WheelEvent.DOM_DELTA_LINE,
             clientX: flick.lastX,
             clientY: flick.lastY,
             bubbles: true,
@@ -163,6 +166,7 @@ export function TerminalPane({
       flick.tracking = true;
       flick.engaged = false;
       flick.startY = t.clientY;
+      flick.startT = e.timeStamp;
       flick.lastX = t.clientX;
       flick.lastY = t.clientY;
       flick.lastT = e.timeStamp;
@@ -171,6 +175,12 @@ export function TerminalPane({
     };
     const onTouchMove = (e: TouchEvent) => {
       e.stopPropagation();
+      // Consume EVERY move from the first: touch-action only rules out
+      // panning — iOS can still claim the drag for text selection (the loupe
+      // engages on the helper textarea, an editable), which fires touchcancel
+      // and kills the gesture a few px in. Nothing on a terminal needs a
+      // native touch gesture, so leave Safari no opening.
+      if (e.cancelable) e.preventDefault();
       const t = e.touches[0];
       if (!flick.tracking || !t || e.touches.length !== 1) return;
       if (!flick.engaged) {
@@ -182,8 +192,6 @@ export function TerminalPane({
         flick.lastT = e.timeStamp;
         return;
       }
-      // Blocks native viewport scrolling and the post-drag synthesized click.
-      e.preventDefault();
       const dy = flick.lastY - t.clientY;
       const dt = Math.max(1, e.timeStamp - flick.lastT);
       // Light smoothing: the release velocity comes from the last move event,
@@ -198,7 +206,17 @@ export function TerminalPane({
       e.stopPropagation();
       if (!flick.tracking) return;
       flick.tracking = false;
-      if (!flick.engaged) return;
+      if (!flick.engaged) {
+        // A tap. Focus explicitly instead of relying on the synthesized
+        // click: preventing a wobbly tap's touchmoves above suppresses its
+        // click, and losing the tap-to-summon-keyboard path is worse than
+        // double-focusing on clean taps.
+        if (e.timeStamp - flick.startT <= TOUCH_TAP_MAX_DURATION_MS && term.element) {
+          e.preventDefault();
+          term.focus();
+        }
+        return;
+      }
       let v = flick.velocity;
       if (Math.abs(v) < TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS) return;
       let last = e.timeStamp;
