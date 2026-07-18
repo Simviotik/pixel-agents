@@ -164,7 +164,19 @@ export function TerminalPane({
       }
       // The terminal opens lazily on its first visible fit (see the mount
       // effect), so it may not be attached yet — that first fit also focuses.
-      if (autoFocus && termRef.current?.element) termRef.current.focus();
+      //
+      // Beyond autoFocus: if the user was typing in ANOTHER pane's terminal
+      // when this one became active (mobile: card tap while the keyboard is
+      // up), steal the focus. Moving focus input-to-input keeps the iOS
+      // keyboard open, where blur-then-nothing would dismiss it.
+      const active = document.activeElement;
+      const typingInOtherTerminal =
+        active instanceof HTMLElement &&
+        active.classList.contains('xterm-helper-textarea') &&
+        !hostRef.current?.contains(active);
+      if ((autoFocus || typingInOtherTerminal) && termRef.current?.element) {
+        termRef.current.focus();
+      }
     });
     return () => cancelAnimationFrame(id);
   }, [isActive, autoFocus]);

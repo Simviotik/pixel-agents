@@ -96,9 +96,11 @@ export function MobileAgentBar({
   const cardRefs = useRef(new Map<number, HTMLDivElement>());
   const dragRef = useRef<DragState>({ phase: 'idle', id: 0, startX: 0, startY: 0, timer: null });
   // The native touch handlers below are attached once but need the current
-  // render's order.
+  // render's order and select callback.
   const displayIdsRef = useRef(displayIds);
   displayIdsRef.current = displayIds;
+  const onSelectAgentRef = useRef(onSelectAgent);
+  onSelectAgentRef.current = onSelectAgent;
 
   const handleCardTouchStart = (id: number) => (e: ReactTouchEvent) => {
     const t = e.touches[0];
@@ -181,6 +183,22 @@ export function MobileAgentBar({
           // Storage full/blocked — the order still applies for this session.
         }
         setDraggingId(null);
+      } else if (drag.phase === 'pending') {
+        // A plain tap (under the slop, before the hold armed). If the user is
+        // typing in a terminal, the tap's default would blur it and dismiss
+        // the iOS keyboard — so swallow the default and select the card
+        // ourselves. The old input keeps focus for now; the newly-activated
+        // pane steals it on activation (TerminalPane), and focus moving
+        // input-to-input keeps the keyboard open. Taps on the card's × close
+        // button are left to their normal click path.
+        const target = e.target instanceof HTMLElement ? e.target : null;
+        const typingInTerminal =
+          document.activeElement instanceof HTMLElement &&
+          document.activeElement.classList.contains('xterm-helper-textarea');
+        if (typingInTerminal && target && !target.closest('button')) {
+          e.preventDefault();
+          onSelectAgentRef.current(drag.id);
+        }
       }
       disarm();
     };
