@@ -402,6 +402,10 @@ export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
   // keyboard has no arrows, and taps don't reach the TUI as clicks.
   { label: '↑', sequence: TERMINAL_SEQ_ARROW_UP, slideArrows: true },
   { label: '↓', sequence: TERMINAL_SEQ_ARROW_DOWN, slideArrows: true },
+  // Line break without submitting: Claude Code's backslash+Enter escape —
+  // its universal form (shift+enter needs a /terminal-setup rebind that
+  // can't exist on a phone keyboard).
+  { label: '↵', sequence: '\\\r' },
 ];
 /** Finger travel per repeated arrow while sliding from an arrow key. */
 export const MOBILE_ARROW_SLIDE_STEP_PX = 16;
