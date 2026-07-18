@@ -152,12 +152,13 @@ export function TerminalPane({
       remainder: 0,
       frame: null as number | null,
     };
-    const findTracked = (list: TouchList) => {
+    const findTouch = (list: TouchList, id: number) => {
       for (let i = 0; i < list.length; i++) {
-        if (list[i].identifier === flick.touchId) return list[i];
+        if (list[i].identifier === id) return list[i];
       }
       return null;
     };
+    const findTracked = (list: TouchList) => findTouch(list, flick.touchId);
     const rowHeightPx = () =>
       host.clientHeight > 0 && term.rows > 0 ? host.clientHeight / term.rows : fontSizePx;
     const stopFlick = () => {
@@ -192,11 +193,12 @@ export function TerminalPane({
     // claiming gestures), so selection is rebuilt on xterm's own model: hold
     // a finger within the tap slop for TERMINAL_LONG_PRESS_MS and the word
     // under it is selected via term.select(); dragging on extends the
-    // selection cell by cell from that anchor; releasing shows a floating
-    // "copy" pill that puts term.getSelection() on the clipboard. Any next
-    // touch on the terminal dismisses selection and pill. Cell math divides
-    // the .xterm-screen rect by cols/rows rather than reading xterm's private
-    // renderer dimensions.
+    // selection cell by cell from that anchor; releasing shows iOS-style
+    // handles at both ends (each draggable to move that end) and a floating
+    // "Copy" pill that puts term.getSelection() on the clipboard. Any next
+    // touch on the terminal dismisses selection, handles, and pill. Cell math
+    // divides the .xterm-screen rect by cols/rows rather than reading xterm's
+    // private renderer dimensions.
     const sel = {
       mode: false,
       timer: null as ReturnType<typeof setTimeout> | null,
@@ -233,13 +235,21 @@ export function TerminalPane({
       );
       return { col, row: term.buffer.active.viewportY + vpRow };
     };
-    const applySelection = (aRow: number, aCol: number, bRow: number, bCol: number) => {
+    // The live selection, ordered start ≤ end (absolute buffer cells) — what
+    // the drag handles read and adjust.
+    const range = { sr: 0, sc: 0, er: 0, ec: 0 };
+    const applyRange = (sRow: number, sCol: number, eRow: number, eCol: number) => {
+      range.sr = sRow;
+      range.sc = sCol;
+      range.er = eRow;
+      range.ec = eCol;
       // term.select takes a start cell plus a length that wraps across rows.
-      const forward = bRow > aRow || (bRow === aRow && bCol >= aCol);
-      const [sRow, sCol, eRow, eCol] = forward
-        ? [aRow, aCol, bRow, bCol]
-        : [bRow, bCol, aRow, aCol];
       term.select(sCol, sRow, (eRow - sRow) * term.cols + (eCol - sCol) + 1);
+    };
+    const applySelection = (aRow: number, aCol: number, bRow: number, bCol: number) => {
+      const forward = bRow > aRow || (bRow === aRow && bCol >= aCol);
+      if (forward) applyRange(aRow, aCol, bRow, bCol);
+      else applyRange(bRow, bCol, aRow, aCol);
     };
     const enterSelection = () => {
       sel.timer = null;
@@ -280,16 +290,16 @@ export function TerminalPane({
       hidePill();
       if (!term.hasSelection()) return;
       pill = document.createElement('button');
-      pill.textContent = 'copy';
+      pill.textContent = 'Copy';
       const rect = host.getBoundingClientRect();
       const s = pill.style;
       s.position = 'absolute';
-      s.left = `${String(Math.min(rect.width - 40, Math.max(40, clientX - rect.left)))}px`;
+      s.left = `${String(Math.min(rect.width - 44, Math.max(44, clientX - rect.left)))}px`;
       s.top = `${String(Math.max(4, clientY - rect.top - TERMINAL_COPY_PILL_GAP_PX))}px`;
       s.transform = 'translateX(-50%)';
       s.zIndex = '10';
-      s.padding = '6px 14px';
-      s.fontSize = '15px';
+      s.padding = '8px 16px';
+      s.fontSize = '17px';
       s.background = 'var(--color-btn-bg)';
       s.color = 'var(--color-text)';
       s.border = '2px solid var(--color-border)';
@@ -298,13 +308,123 @@ export function TerminalPane({
         void navigator.clipboard.writeText(term.getSelection());
         term.clearSelection();
         hidePill();
+        hideHandles();
       });
       host.appendChild(pill);
+    };
+    // iOS-style selection handles: a knob-and-bar lollipop at each end of the
+    // selection — knob above the start, below the end — draggable to move
+    // that end cell by cell (clamped at the other end, so at least one cell
+    // stays selected). Square knob and hard edges to match the pixel design
+    // language; same grammar as the native handles this replaces.
+    let handles: { start: HTMLDivElement; end: HTMLDivElement } | null = null;
+    const hdl = { dragging: null as 'start' | 'end' | null, touchId: -1, lastX: 0, lastY: 0 };
+    const handleKind = (t: EventTarget | null): 'start' | 'end' | null => {
+      if (!(t instanceof HTMLElement)) return null;
+      const kind = t.closest<HTMLElement>('[data-handle]')?.dataset.handle;
+      return kind === 'start' || kind === 'end' ? kind : null;
+    };
+    const hideHandles = () => {
+      if (!handles) return;
+      handles.start.remove();
+      handles.end.remove();
+      handles = null;
+    };
+    const screenRect = () =>
+      (term.element?.querySelector('.xterm-screen') ?? host).getBoundingClientRect();
+    const makeHandle = (kind: 'start' | 'end', cellH: number): HTMLDivElement => {
+      // A 24px-wide touch target around a 2px bar one cell tall, with a 12px
+      // square knob capping it. Children don't hit-test — the wrapper is the
+      // grab surface handleKind() recognizes.
+      const el = document.createElement('div');
+      el.dataset.handle = kind;
+      const s = el.style;
+      s.position = 'absolute';
+      s.width = '24px';
+      s.height = `${String(cellH + 12)}px`;
+      s.zIndex = '10';
+      const bar = document.createElement('div');
+      const b = bar.style;
+      b.position = 'absolute';
+      b.left = '11px';
+      b.top = kind === 'start' ? '12px' : '0';
+      b.width = '2px';
+      b.height = `${String(cellH)}px`;
+      b.background = 'var(--color-accent-bright)';
+      b.pointerEvents = 'none';
+      const knob = document.createElement('div');
+      const k = knob.style;
+      k.position = 'absolute';
+      k.left = '6px';
+      k.top = kind === 'start' ? '0' : `${String(cellH)}px`;
+      k.width = '12px';
+      k.height = '12px';
+      k.background = 'var(--color-accent-bright)';
+      k.pointerEvents = 'none';
+      el.appendChild(bar);
+      el.appendChild(knob);
+      return el;
+    };
+    const positionHandles = () => {
+      if (!handles) return;
+      const sRect = screenRect();
+      const hRect = host.getBoundingClientRect();
+      const cellW = sRect.width / term.cols;
+      const cellH = sRect.height / term.rows;
+      const vpY = term.buffer.active.viewportY;
+      const x = (col: number) => sRect.left - hRect.left + col * cellW;
+      const y = (row: number) => sRect.top - hRect.top + (row - vpY) * cellH;
+      // Bars sit flush with the selection's outer edges; the wrapper offsets
+      // center its 24px touch strip on that edge (and lift the start knob).
+      handles.start.style.left = `${String(x(range.sc) - 12)}px`;
+      handles.start.style.top = `${String(y(range.sr) - 12)}px`;
+      handles.end.style.left = `${String(x(range.ec + 1) - 12)}px`;
+      handles.end.style.top = `${String(y(range.er))}px`;
+    };
+    const showHandles = () => {
+      if (!term.hasSelection()) return;
+      if (!handles) {
+        const cellH = screenRect().height / term.rows;
+        handles = { start: makeHandle('start', cellH), end: makeHandle('end', cellH) };
+        host.appendChild(handles.start);
+        host.appendChild(handles.end);
+      }
+      positionHandles();
+    };
+    const dragHandleTo = (clientX: number, clientY: number) => {
+      const { col, row } = cellAt(clientX, clientY);
+      hdl.lastX = clientX;
+      hdl.lastY = clientY;
+      if (hdl.dragging === 'start') {
+        const past = row > range.er || (row === range.er && col > range.ec);
+        applyRange(past ? range.er : row, past ? range.ec : col, range.er, range.ec);
+      } else {
+        const past = row < range.sr || (row === range.sr && col < range.sc);
+        applyRange(range.sr, range.sc, past ? range.sr : row, past ? range.sc : col);
+      }
+      positionHandles();
     };
     const onTouchStart = (e: TouchEvent) => {
       // A touch on the copy pill belongs to the pill: leave every default in
       // place so its click fires (preventing here would swallow it).
       if (isPillTouch(e)) return;
+      // A drag starting on a selection handle adjusts that end of the
+      // selection instead of starting a scroll; extra contacts landing while
+      // a handle drag is live are swallowed whole.
+      const grabbed = handleKind(e.target);
+      if (grabbed || hdl.dragging) {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+        const t = e.changedTouches[0];
+        if (grabbed && !hdl.dragging && t) {
+          hdl.dragging = grabbed;
+          hdl.touchId = t.identifier;
+          hdl.lastX = t.clientX;
+          hdl.lastY = t.clientY;
+          hidePill();
+        }
+        return;
+      }
       e.stopPropagation();
       // Pre-empt iOS's long-press recognizer too: it's a NO-movement gesture,
       // so the touchmove preventDefault below can't stop it — rest a finger
@@ -338,16 +458,24 @@ export function TerminalPane({
       flick.velocity = 0;
       flick.remainder = 0;
       bindDirect(e.target);
-      // Any live selection or pill dies at the next touch, and the long-press
-      // timer arms a fresh selection for this gesture.
+      // Any live selection, handles, or pill die at the next touch, and the
+      // long-press timer arms a fresh selection for this gesture.
       term.clearSelection();
       hidePill();
+      hideHandles();
       sel.mode = false;
       cancelLongPress();
       sel.timer = setTimeout(enterSelection, TERMINAL_LONG_PRESS_MS);
     };
     const onTouchMove = (e: TouchEvent) => {
       if (isPillTouch(e)) return;
+      if (hdl.dragging) {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+        const t = findTouch(e.changedTouches, hdl.touchId);
+        if (t) dragHandleTo(t.clientX, t.clientY);
+        return;
+      }
       e.stopPropagation();
       // Consume EVERY move from the first: touch-action only rules out
       // panning — iOS can still claim the drag for text selection (the loupe
@@ -400,6 +528,14 @@ export function TerminalPane({
     };
     const onTouchEnd = (e: TouchEvent) => {
       if (isPillTouch(e)) return;
+      if (hdl.dragging) {
+        e.stopPropagation();
+        if (findTouch(e.changedTouches, hdl.touchId)) {
+          hdl.dragging = null;
+          showPill(hdl.lastX, hdl.lastY);
+        }
+        return;
+      }
       e.stopPropagation();
       if (!flick.tracking) return;
       // A palm graze lifting must not end the real drag — only the tracked
@@ -414,6 +550,7 @@ export function TerminalPane({
       cancelLongPress();
       if (sel.mode) {
         sel.mode = false;
+        showHandles();
         showPill(flick.lastX, flick.lastY);
         return;
       }
@@ -445,6 +582,10 @@ export function TerminalPane({
     };
     const onTouchCancel = (e: TouchEvent) => {
       e.stopPropagation();
+      if (hdl.dragging && findTouch(e.changedTouches, hdl.touchId)) {
+        hdl.dragging = null;
+        return;
+      }
       if (!flick.tracking || !findTracked(e.changedTouches)) {
         touchDebugCount('cx-oth');
         return;
@@ -569,6 +710,7 @@ export function TerminalPane({
       unbindDirect();
       cancelLongPress();
       hidePill();
+      hideHandles();
       observer.disconnect();
       registerInputRef.current?.(agentId, null);
       connection.dispose();
@@ -615,7 +757,7 @@ export function TerminalPane({
     // here is synthesized into wheel events instead.
     <div
       ref={hostRef}
-      className="relative w-full h-full touch-none"
+      className="relative overflow-hidden w-full h-full touch-none"
       style={
         {
           display: isActive ? '' : 'none',
