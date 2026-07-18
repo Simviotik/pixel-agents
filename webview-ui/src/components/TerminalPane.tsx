@@ -203,6 +203,7 @@ export function TerminalPane({
       flick.lastT = e.timeStamp;
       flick.velocity = 0;
       flick.remainder = 0;
+      bindDirect(e.target);
     };
     const onTouchMove = (e: TouchEvent) => {
       e.stopPropagation();
@@ -255,6 +256,7 @@ export function TerminalPane({
       }
       touchDebugCount('end');
       flick.tracking = false;
+      unbindDirect();
       if (!flick.engaged) {
         // A tap. Focus explicitly instead of relying on the synthesized
         // click: preventing a wobbly tap's touchmoves above suppresses its
@@ -289,6 +291,55 @@ export function TerminalPane({
       }
       touchDebugCount('cx');
       flick.tracking = false;
+      unbindDirect();
+    };
+    // WebKit addresses every event of a touch gesture to the node that was
+    // the target of its touchstart — for the gesture's whole life. xterm's
+    // DOM renderer rebuilds a row's spans on each repaint of that row
+    // (renderRows → replaceChildren), and the first wheel tick of a drag
+    // makes the TUI repaint the transcript — so a drag that began on a text
+    // span loses its target node a tick or two in. Detached, the events stop
+    // propagating, and the capture listeners on host fall permanently
+    // silent: no more moves, no touchend, not even a touchcancel (the HUD
+    // signature — last:tk, every counter frozen). A drag that begins on a
+    // blank cell keeps its target (row divs persist), which is why only some
+    // scrolls stalled. Events ARE still dispatched at the detached node, so
+    // per-gesture listeners bound directly to the touchstart target keep
+    // receiving the stream. While the target is attached these stay idle —
+    // the host capture handlers run first and their stopPropagation() ends
+    // the dispatch before the target phase; the contains() guard covers the
+    // one case propagation doesn't (host itself as target). `det` counts
+    // events that arrived only through this rescue path.
+    let directTarget: EventTarget | null = null;
+    const directMove = (e: Event) => {
+      if (e.target instanceof Node && host.contains(e.target)) return;
+      touchDebugCount('det');
+      onTouchMove(e as TouchEvent);
+    };
+    const directEnd = (e: Event) => {
+      if (e.target instanceof Node && host.contains(e.target)) return;
+      touchDebugCount('det');
+      onTouchEnd(e as TouchEvent);
+    };
+    const directCancel = (e: Event) => {
+      if (e.target instanceof Node && host.contains(e.target)) return;
+      touchDebugCount('det');
+      onTouchCancel(e as TouchEvent);
+    };
+    const unbindDirect = () => {
+      if (!directTarget) return;
+      directTarget.removeEventListener('touchmove', directMove);
+      directTarget.removeEventListener('touchend', directEnd);
+      directTarget.removeEventListener('touchcancel', directCancel);
+      directTarget = null;
+    };
+    const bindDirect = (t: EventTarget | null) => {
+      unbindDirect();
+      if (!t) return;
+      directTarget = t;
+      t.addEventListener('touchmove', directMove, { passive: false });
+      t.addEventListener('touchend', directEnd);
+      t.addEventListener('touchcancel', directCancel);
     };
     host.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });
     host.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
@@ -353,6 +404,7 @@ export function TerminalPane({
       host.removeEventListener('touchmove', onTouchMove, { capture: true });
       host.removeEventListener('touchend', onTouchEnd, { capture: true });
       host.removeEventListener('touchcancel', onTouchCancel, { capture: true });
+      unbindDirect();
       observer.disconnect();
       registerInputRef.current?.(agentId, null);
       connection.dispose();
