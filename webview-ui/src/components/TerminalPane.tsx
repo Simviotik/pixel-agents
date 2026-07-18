@@ -421,7 +421,10 @@ export function TerminalPane({
       if (isPillTouch(e)) return;
       // A drag starting on a selection handle adjusts that end of the
       // selection instead of starting a scroll; extra contacts landing while
-      // a handle drag is live are swallowed whole.
+      // a handle drag is live are swallowed whole. Self-heal first: if the
+      // dragging finger is no longer down (its end event was consumed
+      // elsewhere or never arrived), the drag is over.
+      if (hdl.dragging && !findTouch(e.touches, hdl.touchId)) hdl.dragging = null;
       const grabbed = handleKind(e.target);
       if (grabbed || hdl.dragging) {
         e.stopPropagation();

@@ -21,6 +21,10 @@ import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
 import {
+  MOBILE_EDGE_SWIPE_COMMIT_RATIO,
+  MOBILE_EDGE_SWIPE_COMMIT_VELOCITY,
+  MOBILE_EDGE_SWIPE_SLOP_PX,
+  MOBILE_EDGE_SWIPE_ZONE_PX,
   MOBILE_VIEW_TRANSITION_MS,
   TERMINAL_DRAWER_DEFAULT_WIDTH_PX,
   TERMINAL_DRAWER_MAX_WIDTH_RATIO,
@@ -408,6 +412,133 @@ function App() {
     }
     setMobileView('terminal');
   }, [mobileView, focusedAgentId, terminalAgentIds]);
+
+  // Edge swipes between the two mobile pages — the gestural twin of the
+  // >_ / Office toggle, so a commit runs the exact same handler (including
+  // the focus-collapse). Capture listeners on the shell run before the
+  // terminal's and canvas's own capture handlers, but a touch in the edge
+  // strip is only CLAIMED once its movement is clearly horizontal — until
+  // then everything propagates normally, so edge taps still select
+  // characters or focus the terminal. While armed-but-unclaimed, only
+  // preventDefault runs (suppressing iOS's own history edge-swipe); the
+  // toggle button, copy pill, and selection handles opt out entirely. A
+  // claimed drag moves the track 1:1 with the finger (transition off), and
+  // the release either commits — transition restored, state flip animates
+  // from the dragged position — or settles back.
+  const mobileShellRef = useRef<HTMLDivElement | null>(null);
+  const mobileTrackRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const shell = mobileShellRef.current;
+    const track = mobileTrackRef.current;
+    if (!isMobile || !shell || !track) return;
+    const toTerminal = mobileView === 'office';
+    if (toTerminal && !terminalAvailable) return;
+    const baseTransform = toTerminal ? 'translateX(0)' : 'translateX(-50%)';
+    const transition = `transform ${String(MOBILE_VIEW_TRANSITION_MS)}ms ease-out`;
+    const sw = {
+      id: -1,
+      claimed: false,
+      startX: 0,
+      startY: 0,
+      lastX: 0,
+      lastT: 0,
+      velocity: 0,
+      width: 0,
+    };
+    const findT = (list: TouchList) => {
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].identifier === sw.id) return list[i];
+      }
+      return null;
+    };
+    const onStart = (e: TouchEvent) => {
+      if (sw.id !== -1) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const rect = shell.getBoundingClientRect();
+      const inZone = toTerminal
+        ? t.clientX >= rect.right - MOBILE_EDGE_SWIPE_ZONE_PX
+        : t.clientX <= rect.left + MOBILE_EDGE_SWIPE_ZONE_PX;
+      if (!inZone) return;
+      if (e.target instanceof Element && e.target.closest('button, [data-handle]')) return;
+      if (e.cancelable) e.preventDefault();
+      sw.id = t.identifier;
+      sw.claimed = false;
+      sw.startX = t.clientX;
+      sw.startY = t.clientY;
+      sw.lastX = t.clientX;
+      sw.lastT = e.timeStamp;
+      sw.velocity = 0;
+      sw.width = rect.width;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (sw.id === -1) return;
+      const t = findT(e.changedTouches);
+      if (!t) return;
+      const dx = t.clientX - sw.startX;
+      const dy = t.clientY - sw.startY;
+      if (!sw.claimed) {
+        if (Math.abs(dy) > MOBILE_EDGE_SWIPE_SLOP_PX && Math.abs(dy) >= Math.abs(dx)) {
+          sw.id = -1; // vertical intent — hand the touch back for good
+          return;
+        }
+        if (Math.abs(dx) < MOBILE_EDGE_SWIPE_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
+        sw.claimed = true;
+        track.style.transition = 'none';
+      }
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+      const dt = Math.max(1, e.timeStamp - sw.lastT);
+      sw.velocity = 0.8 * ((t.clientX - sw.lastX) / dt) + 0.2 * sw.velocity;
+      sw.lastX = t.clientX;
+      sw.lastT = e.timeStamp;
+      const offset = toTerminal
+        ? Math.min(0, Math.max(-sw.width, dx))
+        : Math.min(sw.width, Math.max(0, dx));
+      const base = toTerminal ? 0 : -sw.width;
+      track.style.transform = `translateX(${String(base + offset)}px)`;
+    };
+    const settleBack = () => {
+      track.style.transition = transition;
+      track.style.transform = baseTransform;
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (sw.id === -1 || !findT(e.changedTouches)) return;
+      const { claimed, velocity, width } = sw;
+      const dx = sw.lastX - sw.startX;
+      sw.id = -1;
+      if (!claimed) return;
+      e.stopPropagation();
+      const dir = toTerminal ? -1 : 1;
+      const commit =
+        dx * dir > width * MOBILE_EDGE_SWIPE_COMMIT_RATIO ||
+        velocity * dir > MOBILE_EDGE_SWIPE_COMMIT_VELOCITY;
+      if (commit) {
+        // Restore the transition, then let the view flip patch the
+        // transform — the browser animates from the dragged position.
+        track.style.transition = transition;
+        handleMobileViewToggle();
+      } else {
+        settleBack();
+      }
+    };
+    const onCancel = (e: TouchEvent) => {
+      if (sw.id === -1 || !findT(e.changedTouches)) return;
+      const { claimed } = sw;
+      sw.id = -1;
+      if (claimed) settleBack();
+    };
+    shell.addEventListener('touchstart', onStart, { capture: true, passive: false });
+    shell.addEventListener('touchmove', onMove, { capture: true, passive: false });
+    shell.addEventListener('touchend', onEnd, { capture: true });
+    shell.addEventListener('touchcancel', onCancel, { capture: true });
+    return () => {
+      shell.removeEventListener('touchstart', onStart, { capture: true });
+      shell.removeEventListener('touchmove', onMove, { capture: true });
+      shell.removeEventListener('touchend', onEnd, { capture: true });
+      shell.removeEventListener('touchcancel', onCancel, { capture: true });
+    };
+  }, [isMobile, mobileView, terminalAvailable, handleMobileViewToggle]);
 
   // Mobile card tap. In terminal view the bar is a tab strip: one tap
   // switches panes (external agents jump back to the office — they have no
@@ -821,12 +952,13 @@ function App() {
               it gets to claim, making the whole app jump. The canvas and the
               terminal panes run their own touch handling; the card bar below
               is a sibling, so its horizontal scroll is unaffected. */}
-          <div className="relative flex-1 min-h-0 overflow-hidden touch-none">
+          <div ref={mobileShellRef} className="relative flex-1 min-h-0 overflow-hidden touch-none">
             {/* Sliding track: office and terminal side by side at 200% width;
                 selecting a terminal slides one viewport-width left. Both pages
                 keep real layout at all times (never display:none), so the
                 canvas ResizeObserver and xterm's fit always see dimensions. */}
             <div
+              ref={mobileTrackRef}
               className="absolute top-0 bottom-0 left-0 flex w-[200%]"
               style={{
                 transform: mobileView === 'terminal' ? 'translateX(-50%)' : 'translateX(0)',

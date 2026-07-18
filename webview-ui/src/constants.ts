@@ -340,6 +340,17 @@ export const TERMINAL_THEME = {
 export const MOBILE_MEDIA_QUERY = '(max-width: 768px), ((pointer: coarse) and (max-width: 1024px))';
 /** Slide duration between the office and terminal pages. */
 export const MOBILE_VIEW_TRANSITION_MS = 300;
+/** Width of the screen-edge strips that arm the view-switch swipe: right
+ *  edge in office view (swipe left → terminal), left edge in terminal view
+ *  (swipe right → office). */
+export const MOBILE_EDGE_SWIPE_ZONE_PX = 24;
+/** Horizontal movement that claims an armed edge touch as a view swipe; it
+ *  must also dominate the vertical axis, or the touch is handed back. */
+export const MOBILE_EDGE_SWIPE_SLOP_PX = 8;
+/** Fraction of the page width past which a released swipe commits. */
+export const MOBILE_EDGE_SWIPE_COMMIT_RATIO = 0.35;
+/** Release velocity (px/ms) that commits a swipe regardless of distance. */
+export const MOBILE_EDGE_SWIPE_COMMIT_VELOCITY = 0.3;
 /** Slightly smaller than the desktop 13px: a 390px phone fits ~46 columns at
  *  13px but ~50 at 12px, and Claude Code's TUI degrades below ~45 columns. */
 export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;
