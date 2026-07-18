@@ -14,7 +14,9 @@ interface MobileKeyBarProps {
  */
 export function MobileKeyBar({ onKey }: MobileKeyBarProps) {
   return (
-    <div className="shrink-0 flex items-stretch gap-6 px-8 py-6 bg-bg border-t-2 border-border">
+    // touch-none: keys are tap-only; a drag starting here must not pan the
+    // page (iOS pans the layout viewport while the keyboard is up).
+    <div className="shrink-0 flex items-stretch gap-6 px-8 py-6 bg-bg border-t-2 border-border touch-none">
       {MOBILE_KEY_BAR_KEYS.map(({ label, sequence }) => (
         <button
           key={label}

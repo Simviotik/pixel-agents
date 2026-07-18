@@ -782,7 +782,13 @@ function App() {
     >
       {isMobile ? (
         <>
-          <div className="relative flex-1 min-h-0 overflow-hidden">
+          {/* touch-none: drags on the track (canvas margins, safe-area strip,
+              terminal padding) must never start an iOS page pan — with the
+              keyboard up Safari pans the layout viewport on any vertical drag
+              it gets to claim, making the whole app jump. The canvas and the
+              terminal panes run their own touch handling; the card bar below
+              is a sibling, so its horizontal scroll is unaffected. */}
+          <div className="relative flex-1 min-h-0 overflow-hidden touch-none">
             {/* Sliding track: office and terminal side by side at 200% width;
                 selecting a terminal slides one viewport-width left. Both pages
                 keep real layout at all times (never display:none), so the

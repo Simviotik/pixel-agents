@@ -320,9 +320,14 @@ export function TerminalPane({
   }, [isActive, autoFocus]);
 
   return (
+    // touch-none: no native pan may ever start on the terminal — with the iOS
+    // keyboard up a vertical drag pans the whole page (overflow:hidden does
+    // not apply to viewport panning), and once Safari claims the gesture the
+    // touchmove preventDefault above arrives too late. All touch scrolling
+    // here is synthesized into wheel events instead.
     <div
       ref={hostRef}
-      className="w-full h-full"
+      className="w-full h-full touch-none"
       style={
         {
           display: isActive ? '' : 'none',
