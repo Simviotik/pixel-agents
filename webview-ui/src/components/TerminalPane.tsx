@@ -4,10 +4,12 @@ import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 
 import {
+  TERMINAL_COPY_PILL_GAP_PX,
   TERMINAL_FLICK_DECAY_PER_MS,
   TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS,
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE_PX,
+  TERMINAL_LONG_PRESS_MS,
   TERMINAL_RESIZE_DEBOUNCE_MS,
   TERMINAL_SCROLLBACK_LINES,
   TERMINAL_THEME,
@@ -30,10 +32,20 @@ interface TerminalPaneProps {
    *  raises the software keyboard over half the screen on every view switch —
    *  there, tapping the terminal itself is what summons the keyboard. */
   autoFocus?: boolean;
-  /** Hands the caller a function that writes raw bytes to this pane's PTY
-   *  (null on teardown) — how the mobile key bar injects keys the software
-   *  keyboard doesn't have. */
-  onRegisterInput?: (agentId: number, send: ((data: string) => void) | null) => void;
+  /** Hands the caller this pane's input handle (null on teardown) — how the
+   *  mobile key bar injects keys the software keyboard doesn't have and
+   *  pastes clipboard text. */
+  onRegisterInput?: (agentId: number, handle: TerminalInputHandle | null) => void;
+}
+
+/** Ways to feed input into a pane's PTY from outside the terminal itself. */
+export interface TerminalInputHandle {
+  /** Write raw bytes (key sequences) straight to the PTY. */
+  send: (data: string) => void;
+  /** Paste text through xterm, which wraps it in bracketed-paste markers when
+   *  the running app has turned that mode on — Claude Code has, and without
+   *  the markers a multiline paste would submit at its first newline. */
+  paste: (data: string) => void;
 }
 
 /**
@@ -102,7 +114,10 @@ export function TerminalPane({
     void connection.connect();
 
     term.onData((data) => connection.write(data));
-    registerInputRef.current?.(agentId, (data) => connection.write(data));
+    registerInputRef.current?.(agentId, {
+      send: (data) => connection.write(data),
+      paste: (data) => term.paste(data),
+    });
 
     // Touch scrolling. xterm handles touch drags natively only while the app
     // has NOT enabled mouse tracking — Claude Code has, so on a phone its
@@ -127,6 +142,7 @@ export function TerminalPane({
       tracking: false,
       touchId: -1,
       engaged: false,
+      startX: 0,
       startY: 0,
       startT: 0,
       lastX: 0,
@@ -171,7 +187,124 @@ export function TerminalPane({
         );
       }
     };
+    // Long-press text selection. Native iOS selection is deliberately dead on
+    // the terminal (every touch default is prevented to keep Safari from
+    // claiming gestures), so selection is rebuilt on xterm's own model: hold
+    // a finger within the tap slop for TERMINAL_LONG_PRESS_MS and the word
+    // under it is selected via term.select(); dragging on extends the
+    // selection cell by cell from that anchor; releasing shows a floating
+    // "copy" pill that puts term.getSelection() on the clipboard. Any next
+    // touch on the terminal dismisses selection and pill. Cell math divides
+    // the .xterm-screen rect by cols/rows rather than reading xterm's private
+    // renderer dimensions.
+    const sel = {
+      mode: false,
+      timer: null as ReturnType<typeof setTimeout> | null,
+      // Anchor range (absolute buffer cells) a drag extends from — the word
+      // first selected, or the single pressed cell.
+      startRow: 0,
+      startCol: 0,
+      endRow: 0,
+      endCol: 0,
+    };
+    let pill: HTMLButtonElement | null = null;
+    const hidePill = () => {
+      pill?.remove();
+      pill = null;
+    };
+    const isPillTouch = (e: TouchEvent) =>
+      pill !== null && e.target instanceof Node && pill.contains(e.target);
+    const cancelLongPress = () => {
+      if (sel.timer !== null) {
+        clearTimeout(sel.timer);
+        sel.timer = null;
+      }
+    };
+    const cellAt = (clientX: number, clientY: number) => {
+      const rect = (term.element?.querySelector('.xterm-screen') ?? host).getBoundingClientRect();
+      const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
+      const col = clamp(
+        Math.floor(((clientX - rect.left) / rect.width) * term.cols),
+        term.cols - 1,
+      );
+      const vpRow = clamp(
+        Math.floor(((clientY - rect.top) / rect.height) * term.rows),
+        term.rows - 1,
+      );
+      return { col, row: term.buffer.active.viewportY + vpRow };
+    };
+    const applySelection = (aRow: number, aCol: number, bRow: number, bCol: number) => {
+      // term.select takes a start cell plus a length that wraps across rows.
+      const forward = bRow > aRow || (bRow === aRow && bCol >= aCol);
+      const [sRow, sCol, eRow, eCol] = forward
+        ? [aRow, aCol, bRow, bCol]
+        : [bRow, bCol, aRow, aCol];
+      term.select(sCol, sRow, (eRow - sRow) * term.cols + (eCol - sCol) + 1);
+    };
+    const enterSelection = () => {
+      sel.timer = null;
+      if (!flick.tracking || flick.engaged) return;
+      // Long-press means held STILL: a slow drag that stayed under the
+      // vertical slop (e.g. mostly horizontal) is not a selection.
+      if (
+        Math.abs(flick.lastX - flick.startX) > TOUCH_TAP_MAX_MOVE_PX ||
+        Math.abs(flick.lastY - flick.startY) > TOUCH_TAP_MAX_MOVE_PX
+      ) {
+        return;
+      }
+      sel.mode = true;
+      const { col, row } = cellAt(flick.lastX, flick.lastY);
+      const line = term.buffer.active.getLine(row);
+      const blank = (x: number) => {
+        const chars = line?.getCell(x)?.getChars() ?? '';
+        return chars === '' || chars === ' ';
+      };
+      sel.startRow = sel.endRow = row;
+      sel.startCol = sel.endCol = col;
+      if (!blank(col)) {
+        while (sel.startCol > 0 && !blank(sel.startCol - 1)) sel.startCol--;
+        while (sel.endCol < term.cols - 1 && !blank(sel.endCol + 1)) sel.endCol++;
+        applySelection(row, sel.startCol, row, sel.endCol);
+      } else {
+        // Pressed a blank cell: no initial word, dragging selects from here.
+        term.clearSelection();
+      }
+    };
+    const extendSelection = (clientX: number, clientY: number) => {
+      const { col, row } = cellAt(clientX, clientY);
+      const beforeAnchor = row < sel.startRow || (row === sel.startRow && col < sel.startCol);
+      if (beforeAnchor) applySelection(row, col, sel.endRow, sel.endCol);
+      else applySelection(sel.startRow, sel.startCol, row, col);
+    };
+    const showPill = (clientX: number, clientY: number) => {
+      hidePill();
+      if (!term.hasSelection()) return;
+      pill = document.createElement('button');
+      pill.textContent = 'copy';
+      const rect = host.getBoundingClientRect();
+      const s = pill.style;
+      s.position = 'absolute';
+      s.left = `${String(Math.min(rect.width - 40, Math.max(40, clientX - rect.left)))}px`;
+      s.top = `${String(Math.max(4, clientY - rect.top - TERMINAL_COPY_PILL_GAP_PX))}px`;
+      s.transform = 'translateX(-50%)';
+      s.zIndex = '10';
+      s.padding = '6px 14px';
+      s.fontSize = '15px';
+      s.background = 'var(--color-btn-bg)';
+      s.color = 'var(--color-text)';
+      s.border = '2px solid var(--color-border)';
+      s.borderRadius = '0';
+      pill.addEventListener('click', () => {
+        void navigator.clipboard.writeText(term.getSelection());
+        term.clearSelection();
+        hidePill();
+      });
+      host.appendChild(pill);
+    };
     const onTouchStart = (e: TouchEvent) => {
+      // A touch on the copy pill belongs to the pill: leave every default in
+      // place so its click fires (preventing here would swallow it).
+      if (isPillTouch(e)) return;
       e.stopPropagation();
       // Pre-empt iOS's long-press recognizer too: it's a NO-movement gesture,
       // so the touchmove preventDefault below can't stop it — rest a finger
@@ -196,6 +329,7 @@ export function TerminalPane({
       flick.tracking = true;
       flick.touchId = t.identifier;
       flick.engaged = false;
+      flick.startX = t.clientX;
       flick.startY = t.clientY;
       flick.startT = e.timeStamp;
       flick.lastX = t.clientX;
@@ -204,8 +338,16 @@ export function TerminalPane({
       flick.velocity = 0;
       flick.remainder = 0;
       bindDirect(e.target);
+      // Any live selection or pill dies at the next touch, and the long-press
+      // timer arms a fresh selection for this gesture.
+      term.clearSelection();
+      hidePill();
+      sel.mode = false;
+      cancelLongPress();
+      sel.timer = setTimeout(enterSelection, TERMINAL_LONG_PRESS_MS);
     };
     const onTouchMove = (e: TouchEvent) => {
+      if (isPillTouch(e)) return;
       e.stopPropagation();
       // Consume EVERY move from the first: touch-action only rules out
       // panning — iOS can still claim the drag for text selection (the loupe
@@ -226,12 +368,23 @@ export function TerminalPane({
         touchDebugCount('mv-oth');
         return;
       }
-      if (!flick.engaged) {
-        // Within the tap slop it may still become a tap-to-focus; scrolling
-        // starts (and taps are ruled out) only past it.
-        if (Math.abs(t.clientY - flick.startY) <= TOUCH_TAP_MAX_MOVE_PX) return;
-        flick.engaged = true;
+      if (sel.mode) {
+        extendSelection(t.clientX, t.clientY);
+        flick.lastX = t.clientX;
         flick.lastY = t.clientY;
+        return;
+      }
+      if (!flick.engaged) {
+        // Track the press point while unengaged: enterSelection reads these
+        // to require a still finger even when no move ever exceeded the slop.
+        flick.lastX = t.clientX;
+        flick.lastY = t.clientY;
+        // Within the tap slop it may still become a tap-to-focus or a
+        // long-press selection; scrolling starts (and both are ruled out)
+        // only past it.
+        if (Math.abs(t.clientY - flick.startY) <= TOUCH_TAP_MAX_MOVE_PX) return;
+        cancelLongPress();
+        flick.engaged = true;
         flick.lastT = e.timeStamp;
         return;
       }
@@ -246,6 +399,7 @@ export function TerminalPane({
       emitWheelTicks(dy);
     };
     const onTouchEnd = (e: TouchEvent) => {
+      if (isPillTouch(e)) return;
       e.stopPropagation();
       if (!flick.tracking) return;
       // A palm graze lifting must not end the real drag — only the tracked
@@ -257,6 +411,12 @@ export function TerminalPane({
       touchDebugCount('end');
       flick.tracking = false;
       unbindDirect();
+      cancelLongPress();
+      if (sel.mode) {
+        sel.mode = false;
+        showPill(flick.lastX, flick.lastY);
+        return;
+      }
       if (!flick.engaged) {
         // A tap. Focus explicitly instead of relying on the synthesized
         // click: preventing a wobbly tap's touchmoves above suppresses its
@@ -292,6 +452,8 @@ export function TerminalPane({
       touchDebugCount('cx');
       flick.tracking = false;
       unbindDirect();
+      cancelLongPress();
+      sel.mode = false;
     };
     // WebKit addresses every event of a touch gesture to the node that was
     // the target of its touchstart — for the gesture's whole life. xterm's
@@ -405,6 +567,8 @@ export function TerminalPane({
       host.removeEventListener('touchend', onTouchEnd, { capture: true });
       host.removeEventListener('touchcancel', onTouchCancel, { capture: true });
       unbindDirect();
+      cancelLongPress();
+      hidePill();
       observer.disconnect();
       registerInputRef.current?.(agentId, null);
       connection.dispose();
@@ -451,7 +615,7 @@ export function TerminalPane({
     // here is synthesized into wheel events instead.
     <div
       ref={hostRef}
-      className="w-full h-full touch-none"
+      className="relative w-full h-full touch-none"
       style={
         {
           display: isActive ? '' : 'none',

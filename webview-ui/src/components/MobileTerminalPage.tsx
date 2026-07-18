@@ -1,5 +1,6 @@
 import { MOBILE_TERMINAL_FONT_SIZE_PX } from '../constants.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
+import type { TerminalInputHandle } from './TerminalPane.js';
 import { TerminalPane } from './TerminalPane.js';
 
 interface MobileTerminalPageProps {
@@ -8,7 +9,7 @@ interface MobileTerminalPageProps {
   activeAgentId: number | null;
   onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
   /** Passed through to each pane so the key bar can write to the active PTY. */
-  onRegisterInput: (agentId: number, send: ((data: string) => void) | null) => void;
+  onRegisterInput: (agentId: number, handle: TerminalInputHandle | null) => void;
 }
 
 /**

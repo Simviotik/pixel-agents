@@ -3,6 +3,8 @@ import { MOBILE_KEY_BAR_KEYS } from '../constants.js';
 interface MobileKeyBarProps {
   /** Writes the key's byte sequence to the active terminal's PTY. */
   onKey: (sequence: string) => void;
+  /** Reads the clipboard and pastes it into the active terminal. */
+  onPaste: () => void;
 }
 
 /**
@@ -12,7 +14,9 @@ interface MobileKeyBarProps {
  * supplies the keys a Claude Code TUI actually needs — slash menu, shift+tab
  * mode cycle, esc interrupt — none of which exist on the iOS keyboard.
  */
-export function MobileKeyBar({ onKey }: MobileKeyBarProps) {
+export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
+  const keyClass =
+    'flex-1 bg-btn-bg border-2 border-border rounded-none text-text text-sm leading-none py-8 cursor-pointer active:bg-btn-hover';
   return (
     // touch-none: keys are tap-only; a drag starting here must not pan the
     // page (iOS pans the layout viewport while the keyboard is up).
@@ -31,11 +35,25 @@ export function MobileKeyBar({ onKey }: MobileKeyBarProps) {
           // send on click.
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onKey(sequence)}
-          className="flex-1 bg-btn-bg border-2 border-border rounded-none text-text text-sm leading-none py-8 cursor-pointer active:bg-btn-hover"
+          className={keyClass}
         >
           {label}
         </button>
       ))}
+      <button
+        // Same two-path pattern as the keys. Reading the clipboard inside the
+        // touchend handler keeps the user activation iOS requires; Safari may
+        // still surface its paste-permission callout the first time.
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          onPaste();
+        }}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onPaste()}
+        className={keyClass}
+      >
+        paste
+      </button>
     </div>
   );
 }

@@ -350,6 +350,12 @@ export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;
 export const TOUCH_TAP_MAX_MOVE_PX = 10;
 /** A press longer than this is not a tap even if the finger never moved. */
 export const TOUCH_TAP_MAX_DURATION_MS = 350;
+/** Hold a finger within the tap slop for this long on the terminal to start
+ *  text selection instead of scrolling: the word under the finger is
+ *  selected, and dragging then extends the selection cell by cell. */
+export const TERMINAL_LONG_PRESS_MS = 500;
+/** Vertical gap between the release point and the floating copy pill. */
+export const TERMINAL_COPY_PILL_GAP_PX = 48;
 /** Flick decay after a terminal touch-scroll release, applied per millisecond
  *  of frame time (0.998 ≈ iOS UIScrollView's normal deceleration rate). */
 export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;

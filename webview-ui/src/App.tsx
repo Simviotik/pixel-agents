@@ -14,6 +14,7 @@ import { MobileKeyBar } from './components/MobileKeyBar.js';
 import { MobileTerminalPage } from './components/MobileTerminalPage.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
+import type { TerminalInputHandle } from './components/TerminalPane.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
@@ -352,29 +353,42 @@ function App() {
     }
   }, []);
 
-  // PTY write functions handed up by each mobile TerminalPane, so the key bar
-  // can inject bytes into whichever pane is showing. A ref, not state: sends
-  // are imperative and registration must not re-render the app.
-  const mobileTermInputsRef = useRef(new Map<number, (data: string) => void>());
+  // Input handles handed up by each mobile TerminalPane, so the key bar can
+  // inject bytes or paste into whichever pane is showing. A ref, not state:
+  // sends are imperative and registration must not re-render the app.
+  const mobileTermInputsRef = useRef(new Map<number, TerminalInputHandle>());
   const registerMobileTermInput = useCallback(
-    (agentId: number, send: ((data: string) => void) | null) => {
-      if (send) mobileTermInputsRef.current.set(agentId, send);
+    (agentId: number, handle: TerminalInputHandle | null) => {
+      if (handle) mobileTermInputsRef.current.set(agentId, handle);
       else mobileTermInputsRef.current.delete(agentId);
     },
     [],
   );
+  const getMobileTermInput = useCallback(() => {
+    // Mirror MobileTerminalPage's fallback: first pane when the active agent
+    // has no PTY.
+    const targetId =
+      activeTerminalAgentId !== null && terminalAgentIds.includes(activeTerminalAgentId)
+        ? activeTerminalAgentId
+        : (terminalAgentIds[0] ?? null);
+    return targetId === null ? null : (mobileTermInputsRef.current.get(targetId) ?? null);
+  }, [activeTerminalAgentId, terminalAgentIds]);
   const handleMobileKey = useCallback(
-    (sequence: string) => {
-      // Mirror MobileTerminalPage's fallback: first pane when the active agent
-      // has no PTY.
-      const targetId =
-        activeTerminalAgentId !== null && terminalAgentIds.includes(activeTerminalAgentId)
-          ? activeTerminalAgentId
-          : (terminalAgentIds[0] ?? null);
-      if (targetId !== null) mobileTermInputsRef.current.get(targetId)?.(sequence);
-    },
-    [activeTerminalAgentId, terminalAgentIds],
+    (sequence: string) => getMobileTermInput()?.send(sequence),
+    [getMobileTermInput],
   );
+  const handleMobilePaste = useCallback(() => {
+    const handle = getMobileTermInput();
+    if (!handle) return;
+    // Silently a no-op when the user dismisses Safari's paste-permission
+    // callout or the clipboard is empty.
+    navigator.clipboard.readText().then(
+      (text) => {
+        if (text) handle.paste(text);
+      },
+      () => undefined,
+    );
+  }, [getMobileTermInput]);
 
   // Mobile card tap. In terminal view the bar is a tab strip: one tap
   // switches panes (external agents jump back to the office — they have no
@@ -844,7 +858,7 @@ function App() {
               up (keyboardViewportHeight is the clamp signal) — the last flex
               child, so it sits directly above the keyboard. */}
           {mobileView === 'terminal' && keyboardViewportHeight !== null && (
-            <MobileKeyBar onKey={handleMobileKey} />
+            <MobileKeyBar onKey={handleMobileKey} onPaste={handleMobilePaste} />
           )}
         </>
       ) : (
