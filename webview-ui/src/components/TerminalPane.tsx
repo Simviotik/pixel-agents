@@ -4,11 +4,14 @@ import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 
 import {
+  TERMINAL_FLICK_DECAY_PER_MS,
+  TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS,
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE_PX,
   TERMINAL_RESIZE_DEBOUNCE_MS,
   TERMINAL_SCROLLBACK_LINES,
   TERMINAL_THEME,
+  TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { TerminalConnection } from '../terminal/terminalClient.js';
@@ -99,6 +102,127 @@ export function TerminalPane({
     term.onData((data) => connection.write(data));
     registerInputRef.current?.(agentId, (data) => connection.write(data));
 
+    // Touch scrolling. xterm handles touch drags natively only while the app
+    // has NOT enabled mouse tracking — Claude Code has, so on a phone its
+    // transcript can't be scrolled at all. Translate vertical drags (plus an
+    // iOS-style flick after release) into synthetic wheel events dispatched
+    // into xterm's own wheel pipeline, which already routes every regime
+    // correctly: mouse reports to the TUI when tracking is on (Claude Code
+    // scrolls its transcript), viewport scrollback when off, arrow keys on
+    // the alt screen. One wheel event per row-height of drag, so a tick here
+    // equals one desktop wheel line. Capture-phase stopPropagation starves
+    // xterm's native touch path, which would otherwise double-scroll in the
+    // tracking-off case.
+    const flick = {
+      tracking: false,
+      engaged: false,
+      startY: 0,
+      lastX: 0,
+      lastY: 0,
+      lastT: 0,
+      velocity: 0,
+      remainder: 0,
+      frame: null as number | null,
+    };
+    const rowHeightPx = () =>
+      host.clientHeight > 0 && term.rows > 0 ? host.clientHeight / term.rows : fontSizePx;
+    const stopFlick = () => {
+      if (flick.frame !== null) {
+        cancelAnimationFrame(flick.frame);
+        flick.frame = null;
+      }
+    };
+    const emitWheelTicks = (dyPx: number) => {
+      flick.remainder += dyPx;
+      const rowH = rowHeightPx();
+      const ticks = Math.trunc(flick.remainder / rowH);
+      if (ticks === 0) return;
+      flick.remainder -= ticks * rowH;
+      const target = term.element?.querySelector('.xterm-screen') ?? host;
+      for (let i = 0; i < Math.abs(ticks); i++) {
+        target.dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: Math.sign(ticks) * rowH,
+            deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+            clientX: flick.lastX,
+            clientY: flick.lastY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      e.stopPropagation();
+      stopFlick();
+      const t = e.touches[0];
+      if (!t || e.touches.length !== 1) {
+        flick.tracking = false;
+        return;
+      }
+      flick.tracking = true;
+      flick.engaged = false;
+      flick.startY = t.clientY;
+      flick.lastX = t.clientX;
+      flick.lastY = t.clientY;
+      flick.lastT = e.timeStamp;
+      flick.velocity = 0;
+      flick.remainder = 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      e.stopPropagation();
+      const t = e.touches[0];
+      if (!flick.tracking || !t || e.touches.length !== 1) return;
+      if (!flick.engaged) {
+        // Within the tap slop it may still become a tap-to-focus; scrolling
+        // starts (and taps are ruled out) only past it.
+        if (Math.abs(t.clientY - flick.startY) <= TOUCH_TAP_MAX_MOVE_PX) return;
+        flick.engaged = true;
+        flick.lastY = t.clientY;
+        flick.lastT = e.timeStamp;
+        return;
+      }
+      // Blocks native viewport scrolling and the post-drag synthesized click.
+      e.preventDefault();
+      const dy = flick.lastY - t.clientY;
+      const dt = Math.max(1, e.timeStamp - flick.lastT);
+      // Light smoothing: the release velocity comes from the last move event,
+      // which is noisy on its own.
+      flick.velocity = 0.8 * (dy / dt) + 0.2 * flick.velocity;
+      flick.lastX = t.clientX;
+      flick.lastY = t.clientY;
+      flick.lastT = e.timeStamp;
+      emitWheelTicks(dy);
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      e.stopPropagation();
+      if (!flick.tracking) return;
+      flick.tracking = false;
+      if (!flick.engaged) return;
+      let v = flick.velocity;
+      if (Math.abs(v) < TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS) return;
+      let last = e.timeStamp;
+      const step = (now: number) => {
+        flick.frame = null;
+        const dt = Math.max(1, now - last);
+        last = now;
+        emitWheelTicks(v * dt);
+        v *= TERMINAL_FLICK_DECAY_PER_MS ** dt;
+        if (Math.abs(v) >= TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS) {
+          flick.frame = requestAnimationFrame(step);
+        }
+      };
+      flick.frame = requestAnimationFrame(step);
+    };
+    const onTouchCancel = (e: TouchEvent) => {
+      e.stopPropagation();
+      flick.tracking = false;
+    };
+    host.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    host.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+    host.addEventListener('touchend', onTouchEnd, { capture: true });
+    host.addEventListener('touchcancel', onTouchCancel, { capture: true });
+
     // Debounced: ResizeObserver fires per frame during a drag, and every resize
     // is a syscall on the PTY plus a full TUI repaint.
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -152,6 +276,11 @@ export function TerminalPane({
     return () => {
       if (resizeTimer) clearTimeout(resizeTimer);
       if (verifyFrame !== null) cancelAnimationFrame(verifyFrame);
+      stopFlick();
+      host.removeEventListener('touchstart', onTouchStart, { capture: true });
+      host.removeEventListener('touchmove', onTouchMove, { capture: true });
+      host.removeEventListener('touchend', onTouchEnd, { capture: true });
+      host.removeEventListener('touchcancel', onTouchCancel, { capture: true });
       observer.disconnect();
       registerInputRef.current?.(agentId, null);
       connection.dispose();

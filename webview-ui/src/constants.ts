@@ -350,6 +350,12 @@ export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;
 export const TOUCH_TAP_MAX_MOVE_PX = 10;
 /** A press longer than this is not a tap even if the finger never moved. */
 export const TOUCH_TAP_MAX_DURATION_MS = 350;
+/** Flick decay after a terminal touch-scroll release, applied per millisecond
+ *  of frame time (0.998 ≈ iOS UIScrollView's normal deceleration rate). */
+export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;
+/** Release velocity (px/ms) below which no flick starts and at which a
+ *  running flick stops. */
+export const TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS = 0.05;
 /** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
 export const CARD_REORDER_LONG_PRESS_MS = 400;
 /** localStorage key for the mobile bar's custom card order (per device — a
