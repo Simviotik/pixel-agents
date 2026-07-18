@@ -20,9 +20,20 @@ const STATUS_DOT: Record<TabStatus, string> = {
   disconnected: 'bg-status-error', // red — terminal socket dropped
 };
 
+/** Card highlight tiers: 'focused' = the agent's character is selected in the
+ *  office (active background, no border); 'active' = its terminal pane is the
+ *  one showing (background + accent border). */
+export type CardVariant = 'default' | 'focused' | 'active';
+
+const CARD_VARIANT: Record<CardVariant, string> = {
+  default: 'bg-btn-bg border-transparent hover:bg-btn-hover',
+  focused: 'bg-active-bg border-transparent',
+  active: 'bg-active-bg border-accent',
+};
+
 interface AgentCardProps {
   agentId: number;
-  isActive: boolean;
+  variant: CardVariant;
   appearance: AgentAppearance;
   status: TabStatus | null;
   onSelect: (agentId: number) => void;
@@ -34,7 +45,7 @@ interface AgentCardProps {
  *  tabs: clicking one selects that agent's pane. */
 export function AgentCard({
   agentId,
-  isActive,
+  variant,
   appearance,
   status,
   onSelect,
@@ -42,9 +53,7 @@ export function AgentCard({
 }: AgentCardProps) {
   return (
     <div
-      className={`pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${
-        isActive ? 'bg-active-bg border-accent' : 'bg-btn-bg border-transparent hover:bg-btn-hover'
-      }`}
+      className={`pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
       title={`Agent ${agentId}`}
     >

@@ -19,6 +19,12 @@ interface TerminalPaneProps {
    *  switches — unmounting would drop the scrollback and force a reconnect. */
   isActive: boolean;
   onStatusChange?: (agentId: number, status: TerminalConnectionStatus) => void;
+  /** Override the terminal font size (mobile uses a smaller face for columns). */
+  fontSizePx?: number;
+  /** Focus xterm when the pane opens/activates. Mobile passes false: focusing
+   *  raises the software keyboard over half the screen on every view switch —
+   *  there, tapping the terminal itself is what summons the keyboard. */
+  autoFocus?: boolean;
 }
 
 /**
@@ -28,7 +34,13 @@ interface TerminalPaneProps {
  * is driven entirely through refs — the same pattern OfficeCanvas uses for the
  * game loop.
  */
-export function TerminalPane({ agentId, isActive, onStatusChange }: TerminalPaneProps) {
+export function TerminalPane({
+  agentId,
+  isActive,
+  onStatusChange,
+  fontSizePx = TERMINAL_FONT_SIZE_PX,
+  autoFocus = true,
+}: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -45,7 +57,7 @@ export function TerminalPane({ agentId, isActive, onStatusChange }: TerminalPane
 
     const term = new Terminal({
       fontFamily: TERMINAL_FONT_FAMILY,
-      fontSize: TERMINAL_FONT_SIZE_PX,
+      fontSize: fontSizePx,
       theme: { ...TERMINAL_THEME },
       scrollback: TERMINAL_SCROLLBACK_LINES,
       cursorBlink: true,
@@ -98,7 +110,7 @@ export function TerminalPane({ agentId, isActive, onStatusChange }: TerminalPane
       // here.
       if (!term.element) {
         term.open(host);
-        term.focus();
+        if (autoFocus) term.focus();
       }
       try {
         fit.fit();
@@ -138,7 +150,7 @@ export function TerminalPane({ agentId, isActive, onStatusChange }: TerminalPane
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [agentId]);
+  }, [agentId, fontSizePx, autoFocus]);
 
   // Becoming visible: the pane had no dimensions while hidden, so re-fit and
   // focus now that it does.
@@ -152,10 +164,10 @@ export function TerminalPane({ agentId, isActive, onStatusChange }: TerminalPane
       }
       // The terminal opens lazily on its first visible fit (see the mount
       // effect), so it may not be attached yet — that first fit also focuses.
-      if (termRef.current?.element) termRef.current.focus();
+      if (autoFocus && termRef.current?.element) termRef.current.focus();
     });
     return () => cancelAnimationFrame(id);
-  }, [isActive]);
+  }, [isActive, autoFocus]);
 
   return (
     <div

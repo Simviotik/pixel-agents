@@ -90,7 +90,7 @@ export function TerminalDrawer({
           <AgentCard
             key={agentId}
             agentId={agentId}
-            isActive={agentId === activeId}
+            variant={agentId === activeId ? 'active' : 'default'}
             appearance={getAppearance(agentId) ?? { palette: 0, hueShift: 0 }}
             status={statusFor(agentId)}
             onSelect={onSelectAgent}
