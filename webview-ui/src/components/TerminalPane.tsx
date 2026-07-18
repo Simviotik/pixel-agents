@@ -115,8 +115,16 @@ export function TerminalPane({
     // xterm's measured cell height and its partial-scroll accumulator).
     // Capture-phase stopPropagation starves xterm's native touch path, which
     // would otherwise double-scroll in the tracking-off case.
+    // The gesture follows ONE finger by identifier. Scrolling one-handed, the
+    // palm heel or a second finger grazing the screen edge registers as an
+    // extra contact — a gesture that bailed on touches.length !== 1 died the
+    // moment that happened (and the graze's touchend killed it for good),
+    // stalling roughly every other scroll depending on grip. Other contacts
+    // are ignored entirely; only the tracked finger moves, ends, or cancels
+    // the gesture.
     const flick = {
       tracking: false,
+      touchId: -1,
       engaged: false,
       startY: 0,
       startT: 0,
@@ -126,6 +134,12 @@ export function TerminalPane({
       velocity: 0,
       remainder: 0,
       frame: null as number | null,
+    };
+    const findTracked = (list: TouchList) => {
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].identifier === flick.touchId) return list[i];
+      }
+      return null;
     };
     const rowHeightPx = () =>
       host.clientHeight > 0 && term.rows > 0 ? host.clientHeight / term.rows : fontSizePx;
@@ -166,12 +180,14 @@ export function TerminalPane({
       // even the synthesized click this suppresses isn't needed.
       if (e.cancelable) e.preventDefault();
       stopFlick();
-      const t = e.touches[0];
-      if (!t || e.touches.length !== 1) {
-        flick.tracking = false;
-        return;
-      }
+      // Already following a finger that's still down → this is an extra
+      // contact (palm, second finger); ignore it. The e.touches check
+      // self-heals a stale gesture whose end event never arrived.
+      if (flick.tracking && findTracked(e.touches)) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
       flick.tracking = true;
+      flick.touchId = t.identifier;
       flick.engaged = false;
       flick.startY = t.clientY;
       flick.startT = e.timeStamp;
@@ -189,8 +205,11 @@ export function TerminalPane({
       // and kills the gesture a few px in. Nothing on a terminal needs a
       // native touch gesture, so leave Safari no opening.
       if (e.cancelable) e.preventDefault();
-      const t = e.touches[0];
-      if (!flick.tracking || !t || e.touches.length !== 1) return;
+      if (!flick.tracking) return;
+      // Only the tracked finger's motion counts; this event may be another
+      // contact moving.
+      const t = findTracked(e.changedTouches);
+      if (!t) return;
       if (!flick.engaged) {
         // Within the tap slop it may still become a tap-to-focus; scrolling
         // starts (and taps are ruled out) only past it.
@@ -213,6 +232,9 @@ export function TerminalPane({
     const onTouchEnd = (e: TouchEvent) => {
       e.stopPropagation();
       if (!flick.tracking) return;
+      // A palm graze lifting must not end the real drag — only the tracked
+      // finger ends the gesture.
+      if (!findTracked(e.changedTouches)) return;
       flick.tracking = false;
       if (!flick.engaged) {
         // A tap. Focus explicitly instead of relying on the synthesized
@@ -242,6 +264,7 @@ export function TerminalPane({
     };
     const onTouchCancel = (e: TouchEvent) => {
       e.stopPropagation();
+      if (!flick.tracking || !findTracked(e.changedTouches)) return;
       flick.tracking = false;
     };
     host.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });
