@@ -16,6 +16,7 @@ import {
 } from '../constants.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { TerminalConnection } from '../terminal/terminalClient.js';
+import { touchDebugCount } from '../terminal/touchDebug.js';
 
 interface TerminalPaneProps {
   agentId: number;
@@ -157,6 +158,7 @@ export function TerminalPane({
       flick.remainder -= ticks * rowH;
       const target = term.element?.querySelector('.xterm-screen') ?? host;
       for (let i = 0; i < Math.abs(ticks); i++) {
+        touchDebugCount('tk');
         target.dispatchEvent(
           new WheelEvent('wheel', {
             deltaY: Math.sign(ticks),
@@ -179,11 +181,16 @@ export function TerminalPane({
       // wanted from terminal touches: taps focus explicitly in touchend, so
       // even the synthesized click this suppresses isn't needed.
       if (e.cancelable) e.preventDefault();
+      else touchDebugCount('st-nc');
       stopFlick();
       // Already following a finger that's still down → this is an extra
       // contact (palm, second finger); ignore it. The e.touches check
       // self-heals a stale gesture whose end event never arrived.
-      if (flick.tracking && findTracked(e.touches)) return;
+      if (flick.tracking && findTracked(e.touches)) {
+        touchDebugCount('st-x');
+        return;
+      }
+      touchDebugCount('st');
       const t = e.changedTouches[0];
       if (!t) return;
       flick.tracking = true;
@@ -205,11 +212,19 @@ export function TerminalPane({
       // and kills the gesture a few px in. Nothing on a terminal needs a
       // native touch gesture, so leave Safari no opening.
       if (e.cancelable) e.preventDefault();
-      if (!flick.tracking) return;
+      else touchDebugCount('mv-nc');
+      touchDebugCount('mv');
+      if (!flick.tracking) {
+        touchDebugCount('mv-untr');
+        return;
+      }
       // Only the tracked finger's motion counts; this event may be another
       // contact moving.
       const t = findTracked(e.changedTouches);
-      if (!t) return;
+      if (!t) {
+        touchDebugCount('mv-oth');
+        return;
+      }
       if (!flick.engaged) {
         // Within the tap slop it may still become a tap-to-focus; scrolling
         // starts (and taps are ruled out) only past it.
@@ -234,7 +249,11 @@ export function TerminalPane({
       if (!flick.tracking) return;
       // A palm graze lifting must not end the real drag — only the tracked
       // finger ends the gesture.
-      if (!findTracked(e.changedTouches)) return;
+      if (!findTracked(e.changedTouches)) {
+        touchDebugCount('end-oth');
+        return;
+      }
+      touchDebugCount('end');
       flick.tracking = false;
       if (!flick.engaged) {
         // A tap. Focus explicitly instead of relying on the synthesized
@@ -264,7 +283,11 @@ export function TerminalPane({
     };
     const onTouchCancel = (e: TouchEvent) => {
       e.stopPropagation();
-      if (!flick.tracking || !findTracked(e.changedTouches)) return;
+      if (!flick.tracking || !findTracked(e.changedTouches)) {
+        touchDebugCount('cx-oth');
+        return;
+      }
+      touchDebugCount('cx');
       flick.tracking = false;
     };
     host.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });

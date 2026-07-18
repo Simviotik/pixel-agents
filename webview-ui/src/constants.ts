@@ -375,3 +375,6 @@ export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{ label: string; sequence: strin
 /** visualViewport.height within this many px of innerHeight = keyboard closed
  *  (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
+/** Load the app with ?touchdebug to overlay live gesture counters on screen —
+ *  for diagnosing touch-scroll stalls from a phone with no devtools. */
+export const TOUCH_DEBUG_QUERY_PARAM = 'touchdebug';
