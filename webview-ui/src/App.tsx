@@ -390,6 +390,25 @@ function App() {
     );
   }, [getMobileTermInput]);
 
+  // The >_ / Office view toggle. Entering the terminal view collapses the
+  // canvas focus into the terminal selection: whoever is focused in the
+  // office is the agent whose terminal shows (sub-agents resolve to their
+  // parent, which owns the pane). Card taps, character double-taps, and
+  // launches already keep the two in sync — this toggle was the one path
+  // that could land on a different agent's terminal than the focused one.
+  const handleMobileViewToggle = useCallback(() => {
+    if (mobileView === 'terminal') {
+      setMobileView('office');
+      return;
+    }
+    if (focusedAgentId !== null) {
+      const meta = getOfficeState().subagentMeta.get(focusedAgentId);
+      const focusId = meta ? meta.parentAgentId : focusedAgentId;
+      if (terminalAgentIds.includes(focusId)) setActiveTerminalAgentId(focusId);
+    }
+    setMobileView('terminal');
+  }, [mobileView, focusedAgentId, terminalAgentIds]);
+
   // Mobile card tap. In terminal view the bar is a tab strip: one tap
   // switches panes (external agents jump back to the office — they have no
   // pane). In office view it mirrors the character's two-step tap: first tap
@@ -831,7 +850,7 @@ function App() {
                 <Button
                   size="sm"
                   className="border-border! shadow-pixel"
-                  onClick={() => setMobileView((v) => (v === 'office' ? 'terminal' : 'office'))}
+                  onClick={handleMobileViewToggle}
                   title={mobileView === 'office' ? 'Show terminal' : 'Show office'}
                 >
                   {mobileView === 'office' ? '>_' : 'Office'}
