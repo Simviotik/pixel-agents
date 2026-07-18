@@ -330,3 +330,31 @@ export const TERMINAL_THEME = {
   brightCyan: '#7fe8e8',
   brightWhite: '#ffffff',
 } as const;
+
+// ── Mobile shell ─────────────────────────────────────────────
+// Below this the app swaps the desktop drawer layout for the mobile shell:
+// office and terminal as full-screen pages in a sliding track, with the agent
+// cards in a bottom scroller. Phones match the first clause in either
+// orientation; the second catches touch tablets (iPad portrait/landscape)
+// where the drag-to-resize drawer is unusable anyway.
+export const MOBILE_MEDIA_QUERY = '(max-width: 768px), ((pointer: coarse) and (max-width: 1024px))';
+/** Slide duration between the office and terminal pages. */
+export const MOBILE_VIEW_TRANSITION_MS = 300;
+/** Slightly smaller than the desktop 13px: a 390px phone fits ~46 columns at
+ *  13px but ~50 at 12px, and Claude Code's TUI degrades below ~45 columns. */
+export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;
+
+// ── Touch input (OfficeCanvas) ───────────────────────────────
+/** Finger slop: a touch that moves less than this stays a tap (selects an
+ *  agent); beyond it the gesture becomes a one-finger pan. */
+export const TOUCH_TAP_MAX_MOVE_PX = 10;
+/** A press longer than this is not a tap even if the finger never moved. */
+export const TOUCH_TAP_MAX_DURATION_MS = 350;
+/** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
+export const CARD_REORDER_LONG_PRESS_MS = 400;
+/** localStorage key for the mobile bar's custom card order (per device — a
+ *  presentation preference, deliberately not synced through the server). */
+export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';
+/** visualViewport.height within this many px of innerHeight = keyboard closed
+ *  (the two disagree by sub-pixel rounding on some devices). */
+export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;

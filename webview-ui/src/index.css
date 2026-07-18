@@ -93,6 +93,15 @@
   body,
   #root {
     @apply m-0 w-full h-full overflow-hidden font-pixel text-base text-text;
+    /* Mobile Safari: 100% tracks the shifting URL-bar viewport; dvh follows
+       the *dynamic* viewport so the card bar hugs the real bottom edge. */
+    height: 100dvh;
+    /* No rubber-banding — the app owns all scrolling (canvas pan, xterm,
+       card bar). */
+    overscroll-behavior: none;
+    /* Whatever peeks out during keyboard show/hide or overscroll must be
+       office-dark, never browser-white. */
+    background: var(--color-bg-dark);
   }
 
   * {
@@ -203,6 +212,22 @@
   /* Pulsing dot animation (DebugView, ToolOverlay) */
   .pixel-pulse {
     animation: pixel-pulse 1.5s ease-in-out infinite;
+  }
+
+  /* Mobile card bar: lift its content clear of the iPhone home indicator
+     (safe-area is 0 everywhere else, so this is inert on desktop). */
+  .mobile-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Scroll containers whose overflow is obvious from clipped content (the
+     mobile card bar) — a scrollbar strip would just eat row height. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 
   /* Pixel-style thin scrollbar utility — used by the Area card folder list
