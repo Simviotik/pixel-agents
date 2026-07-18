@@ -16,6 +16,7 @@ import {
   TOUCH_TAP_MAX_DURATION_MS,
   TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
+import { flowTerminalCopy } from '../terminal/flowCopy.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { TerminalConnection } from '../terminal/terminalClient.js';
 import { touchDebugCount } from '../terminal/touchDebug.js';
@@ -286,16 +287,36 @@ export function TerminalPane({
       if (beforeAnchor) applySelection(row, col, sel.endRow, sel.endCol);
       else applySelection(sel.startRow, sel.startCol, row, col);
     };
-    const showPill = (clientX: number, clientY: number) => {
+    // Pixel geometry of the cell grid relative to host — shared by the copy
+    // pill and the selection handles.
+    const cellMetrics = () => {
+      const sRect = (term.element?.querySelector('.xterm-screen') ?? host).getBoundingClientRect();
+      const hRect = host.getBoundingClientRect();
+      const cellH = sRect.height / term.rows;
+      return {
+        hRect,
+        cellH,
+        x: (col: number) => sRect.left - hRect.left + (sRect.width / term.cols) * col,
+        y: (row: number) => sRect.top - hRect.top + (row - term.buffer.active.viewportY) * cellH,
+      };
+    };
+    const showPill = () => {
       hidePill();
       if (!term.hasSelection()) return;
+      const { hRect, x, y } = cellMetrics();
+      // Centered above the whole selection so it never covers the selected
+      // text (a multi-row selection spans the full width, so center on the
+      // pane); when the top row leaves no room, it drops below the end
+      // handle instead.
+      const cx = range.sr === range.er ? (x(range.sc) + x(range.ec + 1)) / 2 : hRect.width / 2;
+      const above = y(range.sr) - TERMINAL_COPY_PILL_GAP_PX;
+      const top = above >= 4 ? above : y(range.er + 1) + 16;
       pill = document.createElement('button');
       pill.textContent = 'Copy';
-      const rect = host.getBoundingClientRect();
       const s = pill.style;
       s.position = 'absolute';
-      s.left = `${String(Math.min(rect.width - 44, Math.max(44, clientX - rect.left)))}px`;
-      s.top = `${String(Math.max(4, clientY - rect.top - TERMINAL_COPY_PILL_GAP_PX))}px`;
+      s.left = `${String(Math.min(hRect.width - 44, Math.max(44, cx)))}px`;
+      s.top = `${String(Math.min(hRect.height - 48, Math.max(4, top)))}px`;
       s.transform = 'translateX(-50%)';
       s.zIndex = '10';
       s.padding = '8px 16px';
@@ -305,7 +326,7 @@ export function TerminalPane({
       s.border = '2px solid var(--color-border)';
       s.borderRadius = '0';
       pill.addEventListener('click', () => {
-        void navigator.clipboard.writeText(term.getSelection());
+        void navigator.clipboard.writeText(flowTerminalCopy(term.getSelection()));
         term.clearSelection();
         hidePill();
         hideHandles();
@@ -318,7 +339,7 @@ export function TerminalPane({
     // stays selected). Square knob and hard edges to match the pixel design
     // language; same grammar as the native handles this replaces.
     let handles: { start: HTMLDivElement; end: HTMLDivElement } | null = null;
-    const hdl = { dragging: null as 'start' | 'end' | null, touchId: -1, lastX: 0, lastY: 0 };
+    const hdl = { dragging: null as 'start' | 'end' | null, touchId: -1 };
     const handleKind = (t: EventTarget | null): 'start' | 'end' | null => {
       if (!(t instanceof HTMLElement)) return null;
       const kind = t.closest<HTMLElement>('[data-handle]')?.dataset.handle;
@@ -330,8 +351,6 @@ export function TerminalPane({
       handles.end.remove();
       handles = null;
     };
-    const screenRect = () =>
-      (term.element?.querySelector('.xterm-screen') ?? host).getBoundingClientRect();
     const makeHandle = (kind: 'start' | 'end', cellH: number): HTMLDivElement => {
       // A 24px-wide touch target around a 2px bar one cell tall, with a 12px
       // square knob capping it. Children don't hit-test — the wrapper is the
@@ -367,13 +386,7 @@ export function TerminalPane({
     };
     const positionHandles = () => {
       if (!handles) return;
-      const sRect = screenRect();
-      const hRect = host.getBoundingClientRect();
-      const cellW = sRect.width / term.cols;
-      const cellH = sRect.height / term.rows;
-      const vpY = term.buffer.active.viewportY;
-      const x = (col: number) => sRect.left - hRect.left + col * cellW;
-      const y = (row: number) => sRect.top - hRect.top + (row - vpY) * cellH;
+      const { x, y } = cellMetrics();
       // Bars sit flush with the selection's outer edges; the wrapper offsets
       // center its 24px touch strip on that edge (and lift the start knob).
       handles.start.style.left = `${String(x(range.sc) - 12)}px`;
@@ -384,7 +397,7 @@ export function TerminalPane({
     const showHandles = () => {
       if (!term.hasSelection()) return;
       if (!handles) {
-        const cellH = screenRect().height / term.rows;
+        const { cellH } = cellMetrics();
         handles = { start: makeHandle('start', cellH), end: makeHandle('end', cellH) };
         host.appendChild(handles.start);
         host.appendChild(handles.end);
@@ -393,8 +406,6 @@ export function TerminalPane({
     };
     const dragHandleTo = (clientX: number, clientY: number) => {
       const { col, row } = cellAt(clientX, clientY);
-      hdl.lastX = clientX;
-      hdl.lastY = clientY;
       if (hdl.dragging === 'start') {
         const past = row > range.er || (row === range.er && col > range.ec);
         applyRange(past ? range.er : row, past ? range.ec : col, range.er, range.ec);
@@ -419,8 +430,6 @@ export function TerminalPane({
         if (grabbed && !hdl.dragging && t) {
           hdl.dragging = grabbed;
           hdl.touchId = t.identifier;
-          hdl.lastX = t.clientX;
-          hdl.lastY = t.clientY;
           hidePill();
         }
         return;
@@ -532,7 +541,7 @@ export function TerminalPane({
         e.stopPropagation();
         if (findTouch(e.changedTouches, hdl.touchId)) {
           hdl.dragging = null;
-          showPill(hdl.lastX, hdl.lastY);
+          showPill();
         }
         return;
       }
@@ -551,7 +560,7 @@ export function TerminalPane({
       if (sel.mode) {
         sel.mode = false;
         showHandles();
-        showPill(flick.lastX, flick.lastY);
+        showPill();
         return;
       }
       if (!flick.engaged) {

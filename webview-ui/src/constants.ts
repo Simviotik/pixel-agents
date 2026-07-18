@@ -354,8 +354,9 @@ export const TOUCH_TAP_MAX_DURATION_MS = 350;
  *  text selection instead of scrolling: the word under the finger is
  *  selected, and dragging then extends the selection cell by cell. */
 export const TERMINAL_LONG_PRESS_MS = 500;
-/** Vertical gap between the release point and the floating copy pill. */
-export const TERMINAL_COPY_PILL_GAP_PX = 48;
+/** Vertical gap between the selection's top row and the floating copy pill
+ *  hovering above it (clears the start handle's knob). */
+export const TERMINAL_COPY_PILL_GAP_PX = 56;
 /** Flick decay after a terminal touch-scroll release, applied per millisecond
  *  of frame time (0.998 ≈ iOS UIScrollView's normal deceleration rate). */
 export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;
