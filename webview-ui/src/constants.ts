@@ -389,6 +389,10 @@ export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{ label: string; sequence: strin
   { label: '/', sequence: '/' },
   { label: 'shift+tab', sequence: '\x1b[Z' },
   { label: 'esc', sequence: '\x1b' },
+  // Arrow keys drive Claude Code's TUI menus (/resume, /model) — the iOS
+  // keyboard has no arrows, and taps don't reach the TUI as clicks.
+  { label: '↑', sequence: '\x1b[A' },
+  { label: '↓', sequence: '\x1b[B' },
 ];
 /** visualViewport.height within this many px of innerHeight = keyboard closed
  *  (the two disagree by sub-pixel rounding on some devices). */
