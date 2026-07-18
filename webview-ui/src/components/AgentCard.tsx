@@ -36,6 +36,10 @@ interface AgentCardProps {
   variant: CardVariant;
   appearance: AgentAppearance;
   status: TabStatus | null;
+  /** When false the × is invisible (not removed — the card keeps its width so
+   *  the bar doesn't reflow). Mobile only shows it on the active terminal tab
+   *  to keep a stray tap from killing an agent. */
+  showClose?: boolean;
   onSelect: (agentId: number) => void;
   onClose: (agentId: number) => void;
 }
@@ -48,6 +52,7 @@ export function AgentCard({
   variant,
   appearance,
   status,
+  showClose = true,
   onSelect,
   onClose,
 }: AgentCardProps) {
@@ -70,7 +75,7 @@ export function AgentCard({
             onClose(agentId);
           }}
           title="Close agent"
-          className="leading-none"
+          className={`leading-none ${showClose ? '' : 'invisible'}`}
         >
           ×
         </Button>

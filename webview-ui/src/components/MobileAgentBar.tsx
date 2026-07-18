@@ -261,6 +261,7 @@ export function MobileAgentBar({
                 variant={variantFor(agentId)}
                 appearance={getAppearance(agentId) ?? { palette: 0, hueShift: 0 }}
                 status={statusFor(agentId)}
+                showClose={variantFor(agentId) === 'active'}
                 onSelect={onSelectAgent}
                 onClose={onCloseAgent}
               />
