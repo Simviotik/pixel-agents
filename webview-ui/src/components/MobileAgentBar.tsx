@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   CARD_REORDER_LONG_PRESS_MS,
+  CARD_SCROLL_INTO_VIEW_MARGIN_PX,
   MOBILE_CARD_ORDER_STORAGE_KEY,
   TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
@@ -212,6 +213,26 @@ export function MobileAgentBar({
       scroller.removeEventListener('touchcancel', onTouchEnd);
     };
   }, []);
+
+  // Tapping a character on the canvas focuses an agent whose card may sit
+  // outside the scroller — bring it fully into view. Also fires when the
+  // focus came from a card tap, where at worst it nudges a half-clipped card
+  // the rest of the way in.
+  useEffect(() => {
+    if (focusedAgentId === null) return;
+    const scroller = scrollerRef.current;
+    const card = cardRefs.current.get(focusedAgentId);
+    if (!scroller || !card) return;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const leftOverhang = scrollerRect.left + CARD_SCROLL_INTO_VIEW_MARGIN_PX - cardRect.left;
+    const rightOverhang = cardRect.right - (scrollerRect.right - CARD_SCROLL_INTO_VIEW_MARGIN_PX);
+    if (leftOverhang > 0) {
+      scroller.scrollBy({ left: -leftOverhang, behavior: 'smooth' });
+    } else if (rightOverhang > 0) {
+      scroller.scrollBy({ left: rightOverhang, behavior: 'smooth' });
+    }
+  }, [focusedAgentId]);
 
   // The accent border marks the showing terminal tab, so it only exists in
   // terminal view; the focused character keeps the background tint in both.

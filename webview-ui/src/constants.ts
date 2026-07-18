@@ -355,6 +355,9 @@ export const CARD_REORDER_LONG_PRESS_MS = 400;
 /** localStorage key for the mobile bar's custom card order (per device — a
  *  presentation preference, deliberately not synced through the server). */
 export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';
+/** Breathing room kept between a card and the scroller edge when the bar
+ *  auto-scrolls the focused agent's card into view. */
+export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
 /** visualViewport.height within this many px of innerHeight = keyboard closed
  *  (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
