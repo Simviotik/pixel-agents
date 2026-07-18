@@ -25,6 +25,10 @@ interface TerminalPaneProps {
    *  raises the software keyboard over half the screen on every view switch —
    *  there, tapping the terminal itself is what summons the keyboard. */
   autoFocus?: boolean;
+  /** Hands the caller a function that writes raw bytes to this pane's PTY
+   *  (null on teardown) — how the mobile key bar injects keys the software
+   *  keyboard doesn't have. */
+  onRegisterInput?: (agentId: number, send: ((data: string) => void) | null) => void;
 }
 
 /**
@@ -40,6 +44,7 @@ export function TerminalPane({
   onStatusChange,
   fontSizePx = TERMINAL_FONT_SIZE_PX,
   autoFocus = true,
+  onRegisterInput,
 }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -50,6 +55,8 @@ export function TerminalPane({
   // reconnect the socket on every parent render.
   const statusRef = useRef(onStatusChange);
   statusRef.current = onStatusChange;
+  const registerInputRef = useRef(onRegisterInput);
+  registerInputRef.current = onRegisterInput;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -90,6 +97,7 @@ export function TerminalPane({
     void connection.connect();
 
     term.onData((data) => connection.write(data));
+    registerInputRef.current?.(agentId, (data) => connection.write(data));
 
     // Debounced: ResizeObserver fires per frame during a drag, and every resize
     // is a syscall on the PTY plus a full TUI repaint.
@@ -145,6 +153,7 @@ export function TerminalPane({
       if (resizeTimer) clearTimeout(resizeTimer);
       if (verifyFrame !== null) cancelAnimationFrame(verifyFrame);
       observer.disconnect();
+      registerInputRef.current?.(agentId, null);
       connection.dispose();
       term.dispose();
       termRef.current = null;

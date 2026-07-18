@@ -7,6 +7,8 @@ interface MobileTerminalPageProps {
   agentIds: number[];
   activeAgentId: number | null;
   onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
+  /** Passed through to each pane so the key bar can write to the active PTY. */
+  onRegisterInput: (agentId: number, send: ((data: string) => void) | null) => void;
 }
 
 /**
@@ -25,6 +27,7 @@ export function MobileTerminalPage({
   agentIds,
   activeAgentId,
   onStatusChange,
+  onRegisterInput,
 }: MobileTerminalPageProps) {
   // Fall back to the first terminal when the active agent has no PTY.
   const activeId =
@@ -56,6 +59,7 @@ export function MobileTerminalPage({
             onStatusChange={onStatusChange}
             fontSizePx={MOBILE_TERMINAL_FONT_SIZE_PX}
             autoFocus={false}
+            onRegisterInput={onRegisterInput}
           />
         </div>
       ))}

@@ -10,6 +10,7 @@ import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { MobileAgentBar } from './components/MobileAgentBar.js';
+import { MobileKeyBar } from './components/MobileKeyBar.js';
 import { MobileTerminalPage } from './components/MobileTerminalPage.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
@@ -350,6 +351,30 @@ function App() {
       os.cameraFollowId = agentId;
     }
   }, []);
+
+  // PTY write functions handed up by each mobile TerminalPane, so the key bar
+  // can inject bytes into whichever pane is showing. A ref, not state: sends
+  // are imperative and registration must not re-render the app.
+  const mobileTermInputsRef = useRef(new Map<number, (data: string) => void>());
+  const registerMobileTermInput = useCallback(
+    (agentId: number, send: ((data: string) => void) | null) => {
+      if (send) mobileTermInputsRef.current.set(agentId, send);
+      else mobileTermInputsRef.current.delete(agentId);
+    },
+    [],
+  );
+  const handleMobileKey = useCallback(
+    (sequence: string) => {
+      // Mirror MobileTerminalPage's fallback: first pane when the active agent
+      // has no PTY.
+      const targetId =
+        activeTerminalAgentId !== null && terminalAgentIds.includes(activeTerminalAgentId)
+          ? activeTerminalAgentId
+          : (terminalAgentIds[0] ?? null);
+      if (targetId !== null) mobileTermInputsRef.current.get(targetId)?.(sequence);
+    },
+    [activeTerminalAgentId, terminalAgentIds],
+  );
 
   // Mobile card tap. In terminal view the bar is a tab strip: one tap
   // switches panes (external agents jump back to the office — they have no
@@ -775,6 +800,7 @@ function App() {
                   agentIds={terminalAgentIds}
                   activeAgentId={activeTerminalAgentId}
                   onStatusChange={handleMobileTermStatus}
+                  onRegisterInput={registerMobileTermInput}
                 />
               </div>
             </div>
@@ -807,6 +833,13 @@ function App() {
             getAppearance={getAgentAppearance}
             statusFor={mobileStatusFor}
           />
+
+          {/* Accessory keys for the TUI, only while the software keyboard is
+              up (keyboardViewportHeight is the clamp signal) — the last flex
+              child, so it sits directly above the keyboard. */}
+          {mobileView === 'terminal' && keyboardViewportHeight !== null && (
+            <MobileKeyBar onKey={handleMobileKey} />
+          )}
         </>
       ) : (
         <>

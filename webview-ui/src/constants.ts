@@ -358,6 +358,14 @@ export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';
 /** Breathing room kept between a card and the scroller edge when the bar
  *  auto-scrolls the focused agent's card into view. */
 export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
+/** Accessory keys shown above the iOS keyboard in terminal view — the keys a
+ *  Claude Code TUI needs that the software keyboard lacks. `sequence` is the
+ *  raw bytes written to the PTY: shift+tab is CSI Z (back-tab). */
+export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{ label: string; sequence: string }> = [
+  { label: '/', sequence: '/' },
+  { label: 'shift+tab', sequence: '\x1b[Z' },
+  { label: 'esc', sequence: '\x1b' },
+];
 /** visualViewport.height within this many px of innerHeight = keyboard closed
  *  (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
