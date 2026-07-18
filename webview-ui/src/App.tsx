@@ -2,20 +2,24 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
-import type { AgentActivity } from './components/AgentCard.js';
+import type { AgentActivity, TabStatus } from './components/AgentCard.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { MobileAgentBar } from './components/MobileAgentBar.js';
+import { MobileTerminalPage } from './components/MobileTerminalPage.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
 import { Tooltip } from './components/Tooltip.js';
+import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
 import {
+  MOBILE_VIEW_TRANSITION_MS,
   TERMINAL_DRAWER_DEFAULT_WIDTH_PX,
   TERMINAL_DRAWER_MAX_WIDTH_RATIO,
   TERMINAL_DRAWER_MIN_WIDTH_PX,
@@ -23,6 +27,8 @@ import {
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
+import { useIsMobile } from './hooks/useIsMobile.js';
+import { useVisualViewportHeight } from './hooks/useVisualViewportHeight.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -34,6 +40,7 @@ import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
+import type { TerminalConnectionStatus } from './terminal/terminalClient.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 
@@ -118,6 +125,44 @@ function App() {
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [terminalWidthPx, setTerminalWidthPx] = useState(TERMINAL_DRAWER_DEFAULT_WIDTH_PX);
 
+  // Mobile shell: office and terminal are full-screen pages in a sliding
+  // track, with the agent cards in a bottom scroller. Desktop keeps the
+  // right-docked drawer. Crossing the breakpoint (rotation, window resize)
+  // remounts the terminal panes; their sockets reconnect and the server
+  // replays the current screen.
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState<'office' | 'terminal'>('office');
+  // Software-keyboard handling: clamp the shell to the visual viewport so the
+  // terminal shrinks (and the PTY resizes) instead of hiding its input line
+  // under the keys. null while the keyboard is closed.
+  const keyboardViewportHeight = useVisualViewportHeight(isMobile);
+  // Mirror the office's imperative character selection into React so the
+  // mobile card bar can restyle the focused agent's card — selection changes
+  // from canvas taps would otherwise never re-render the bar.
+  const [focusedAgentId, setFocusedAgentId] = useState<number | null>(null);
+  useEffect(() => {
+    const os = getOfficeState();
+    os.onSelectionChange = setFocusedAgentId;
+    setFocusedAgentId(os.selectedAgentId);
+    return () => {
+      os.onSelectionChange = null;
+    };
+  }, []);
+
+  // Terminal socket status per agent for the mobile card bar's red dot — the
+  // desktop equivalent lives inside TerminalDrawer, which mobile doesn't mount.
+  const [mobileConnStatuses, setMobileConnStatuses] = useState<
+    Record<number, TerminalConnectionStatus>
+  >({});
+  const handleMobileTermStatus = useCallback(
+    (agentId: number, status: TerminalConnectionStatus) => {
+      setMobileConnStatuses((prev) =>
+        prev[agentId] === status ? prev : { ...prev, [agentId]: status },
+      );
+    },
+    [],
+  );
+
   // Drag the panel's left edge to resize. The office region is flex-1 beside it,
   // so it reflows to fill whatever width is left — the canvas ResizeObserver
   // repaints and re-centres the camera on the smaller region automatically.
@@ -166,14 +211,29 @@ function App() {
   // is up — so "open the drawer on launch" is expressed as "open it when a
   // terminal we hadn't seen appears". This also restores the drawer after a
   // reload, when webviewReady re-announces the live sessions.
+  //
+  // Mobile only slides over for launches initiated from the + card
+  // (pendingMobileLaunchRef): the office is the app's main screen, so a
+  // reload that re-announces live sessions must land on the office, not
+  // whatever terminal happens to exist.
   const knownTerminalIdsRef = useRef<number[]>([]);
+  const pendingMobileLaunchRef = useRef(false);
   useEffect(() => {
     const added = terminalAgentIds.filter((id) => !knownTerminalIdsRef.current.includes(id));
     knownTerminalIdsRef.current = terminalAgentIds;
     if (added.length === 0) return;
     setActiveTerminalAgentId(added[added.length - 1]);
     setIsTerminalOpen(true);
+    if (pendingMobileLaunchRef.current) setMobileView('terminal');
+    pendingMobileLaunchRef.current = false;
   }, [terminalAgentIds]);
+
+  // The + card in the mobile bar: launch, then slide to the new terminal when
+  // the server announces it (see the effect above).
+  const handleMobileLaunch = useCallback(() => {
+    pendingMobileLaunchRef.current = true;
+    editor.handleOpenClaude();
+  }, [editor.handleOpenClaude]);
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
   const handleToggleAlwaysShowOverlay = useCallback(() => {
@@ -268,13 +328,15 @@ function App() {
       transport.send({ type: 'focusAgent', id: focusId });
       // Standalone: focusAgent is a no-op server-side (there's no editor to
       // raise a panel in), so focus is resolved here — select the agent's tab
-      // and open the drawer, mirroring VS Code's terminalRef.show().
+      // and open the drawer (desktop) or slide to the terminal page (mobile),
+      // mirroring VS Code's terminalRef.show().
       if (terminalAgentIds.includes(focusId)) {
         setActiveTerminalAgentId(focusId);
         setIsTerminalOpen(true);
+        if (isMobile) setMobileView('terminal');
       }
     },
-    [terminalAgentIds],
+    [terminalAgentIds, isMobile],
   );
 
   const handleSelectTerminal = useCallback((agentId: number) => {
@@ -288,6 +350,44 @@ function App() {
       os.cameraFollowId = agentId;
     }
   }, []);
+
+  // Mobile card tap. In terminal view the bar is a tab strip: one tap
+  // switches panes (external agents jump back to the office — they have no
+  // pane). In office view it mirrors the character's two-step tap: first tap
+  // focuses the character (camera follow + status label), a repeat tap on the
+  // already-focused agent opens its terminal.
+  const handleMobileCardSelect = useCallback(
+    (agentId: number) => {
+      const os = getOfficeState();
+      const hasTerminal = terminalAgentIds.includes(agentId);
+      const focusCharacter = () => {
+        if (os.characters.has(agentId)) {
+          os.selectedAgentId = agentId;
+          os.cameraFollowId = agentId;
+        }
+      };
+
+      if (mobileView === 'terminal') {
+        focusCharacter();
+        if (hasTerminal) {
+          setActiveTerminalAgentId(agentId);
+        } else {
+          setMobileView('office');
+        }
+        return;
+      }
+
+      if (os.selectedAgentId === agentId && hasTerminal) {
+        setActiveTerminalAgentId(agentId);
+        setMobileView('terminal');
+        return;
+      }
+      focusCharacter();
+      // Pre-select the pane (and the card highlight) without leaving the office.
+      if (hasTerminal) setActiveTerminalAgentId(agentId);
+    },
+    [terminalAgentIds, mobileView],
+  );
 
   const officeState = getOfficeState();
 
@@ -315,6 +415,20 @@ function App() {
       return 'working';
     },
     [agentSeenActivity, agentTools, agentStatuses, agentAwaitingInput],
+  );
+
+  // Card status for the mobile bar: connection-broken (red) wins for agents
+  // whose terminal socket dropped; everything else shows live activity.
+  // (Desktop's TerminalDrawer derives the same thing from its own pane state.)
+  const mobileStatusFor = useCallback(
+    (agentId: number): TabStatus | null => {
+      const conn = mobileConnStatuses[agentId];
+      if (terminalAgentIds.includes(agentId) && (conn === 'closed' || conn === 'reconnecting')) {
+        return 'disconnected';
+      }
+      return getAgentActivity(agentId);
+    },
+    [mobileConnStatuses, terminalAgentIds, getAgentActivity],
   );
 
   // Merged set of folders the Areas dropdown can map: real workspace folders plus
@@ -406,186 +520,193 @@ function App() {
     return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
   }
 
-  return (
-    // Split view: the office region flexes to fill the space left of the panel,
-    // so shrinking the panel genuinely gives the office more room (the canvas,
-    // camera centring and corner UI all follow the region, not the window).
-    <div className="w-full h-full relative overflow-hidden flex">
-      <div ref={containerRef} className="relative h-full flex-1 min-w-0 overflow-hidden">
-        <OfficeCanvas
-          officeState={officeState}
-          onClick={handleClick}
-          isEditMode={editor.isEditMode}
-          editorState={editorState}
-          onEditorTileAction={editor.handleEditorTileAction}
-          onEditorEraseAction={editor.handleEditorEraseAction}
-          onEditorSelectionChange={editor.handleEditorSelectionChange}
-          onDeleteSelected={editor.handleDeleteSelected}
-          onRotateSelected={editor.handleRotateSelected}
-          onDragMove={editor.handleDragMove}
-          editorTick={editor.editorTick}
-          zoom={editor.zoom}
-          onZoomChange={editor.handleZoomChange}
-          panRef={editor.panRef}
-          showAreas={effectiveShowAreas}
-          activeAreaLabel={activeAreaLabel}
-        />
+  // The office region is shared by both shells: desktop mounts it as the
+  // flexing left half of the split view (the terminal panel docks beside it);
+  // mobile mounts it as the first page of the sliding track. containerRef
+  // (ToolOverlay geometry) rides along either way.
+  const officeRegion = (
+    <div
+      ref={containerRef}
+      className={`relative h-full overflow-hidden ${isMobile ? 'w-full' : 'flex-1 min-w-0'}`}
+    >
+      <OfficeCanvas
+        officeState={officeState}
+        onClick={handleClick}
+        isEditMode={editor.isEditMode}
+        editorState={editorState}
+        onEditorTileAction={editor.handleEditorTileAction}
+        onEditorEraseAction={editor.handleEditorEraseAction}
+        onEditorSelectionChange={editor.handleEditorSelectionChange}
+        onDeleteSelected={editor.handleDeleteSelected}
+        onRotateSelected={editor.handleRotateSelected}
+        onDragMove={editor.handleDragMove}
+        editorTick={editor.editorTick}
+        zoom={editor.zoom}
+        onZoomChange={editor.handleZoomChange}
+        panRef={editor.panRef}
+        showAreas={effectiveShowAreas}
+        activeAreaLabel={activeAreaLabel}
+        tapSelectsFirst={isMobile}
+      />
 
-        {!isDebugMode ? (
-          <>
-            <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
+      {!isDebugMode ? (
+        <>
+          {/* Mobile: pinch replaces the zoom buttons, and the toolbar's
+                jobs move to the card bar (+) and the floating Settings button. */}
+          {!isMobile && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
 
-            {/* Vignette overlay */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{ background: 'var(--vignette)' }}
-            />
-
-            {editor.isEditMode && editor.isDirty && (
-              <EditActionBar editor={editor} editorState={editorState} />
-            )}
-
-            {showRotateHint && (
-              <div
-                className="absolute left-1/2 -translate-x-1/2 z-11 bg-accent-bright text-white text-sm py-3 px-8 rounded-none border-2 border-accent shadow-pixel pointer-events-none whitespace-nowrap"
-                style={{ top: editor.isDirty ? 64 : 8 }}
-              >
-                Rotate (R)
-              </div>
-            )}
-
-            {editor.isEditMode &&
-              (() => {
-                const selUid = editorState.selectedFurnitureUid;
-                const selColor = selUid
-                  ? (officeState.getLayout().furniture.find((f) => f.uid === selUid)?.color ?? null)
-                  : null;
-                return (
-                  <EditorToolbar
-                    activeTool={editorState.activeTool}
-                    selectedTileType={editorState.selectedTileType}
-                    selectedFurnitureType={editorState.selectedFurnitureType}
-                    selectedFurnitureUid={selUid}
-                    selectedFurnitureColor={selColor}
-                    floorColor={editorState.floorColor}
-                    wallColor={editorState.wallColor}
-                    selectedWallSet={editorState.selectedWallSet}
-                    onToolChange={editor.handleToolChange}
-                    onTileTypeChange={editor.handleTileTypeChange}
-                    onFloorColorChange={editor.handleFloorColorChange}
-                    onWallColorChange={editor.handleWallColorChange}
-                    onWallSetChange={editor.handleWallSetChange}
-                    onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
-                    pickedFurnitureColor={editorState.pickedFurnitureColor}
-                    onPickedFurnitureColorChange={editor.handlePickedFurnitureColorChange}
-                    onFurnitureTypeChange={editor.handleFurnitureTypeChange}
-                    loadedAssets={loadedAssets}
-                    activePetTypes={officeState.getActivePetTypes()}
-                    petCount={getPetCount()}
-                    onPetToggle={editor.handlePetToggle}
-                    carpetVariant={editor.carpetVariant}
-                    carpetColor={editor.carpetColor}
-                    carpetAccentColor={editor.carpetAccentColor}
-                    onCarpetVariantChange={editor.handleCarpetVariantChange}
-                    onCarpetColorChange={editor.handleCarpetColorChange}
-                    onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
-                    areas={officeState.getLayout().areas ?? []}
-                    selectedAreaLabel={editor.selectedAreaLabel}
-                    workspaceFolders={areaFolders}
-                    areasAvailable={areasAvailable}
-                    areaMappings={areaMappings}
-                    onSelectArea={editor.handleSelectArea}
-                    onAddArea={editor.handleAddArea}
-                    onRemoveArea={editor.handleRemoveArea}
-                    onRenameArea={editor.handleRenameArea}
-                    onAreaColorChange={editor.handleAreaColorChange}
-                    onAreaMappingChange={handleAreaMappingChange}
-                  />
-                );
-              })()}
-
-            <ToolOverlay
-              officeState={officeState}
-              agents={agents}
-              agentTools={agentTools}
-              subagentCharacters={subagentCharacters}
-              containerRef={containerRef}
-              zoom={editor.zoom}
-              panRef={editor.panRef}
-              onCloseAgent={handleCloseAgent}
-              alwaysShowOverlay={alwaysShowOverlay}
-            />
-          </>
-        ) : (
-          <DebugView
-            agents={agents}
-            selectedAgent={selectedAgent}
-            agentTools={agentTools}
-            agentStatuses={agentStatuses}
-            subagentTools={subagentTools}
-            officeState={officeState}
-            onSelectAgent={handleSelectAgent}
+          {/* Vignette overlay */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: 'var(--vignette)' }}
           />
-        )}
 
-        {/* Hooks first-run tooltip */}
-        {!hooksInfoShown && !hooksTooltipDismissed && (
-          <Tooltip
-            title="Instant Detection Active"
-            position="top-right"
-            onDismiss={() => {
-              setHooksTooltipDismissed(true);
-              transport.send({ type: 'setHooksInfoShown' });
-            }}
-          >
-            <span className="text-sm text-text leading-none">
-              Your agents now respond in real-time.{' '}
-              <span
-                className="text-accent cursor-pointer underline"
-                onClick={() => {
-                  setIsHooksInfoOpen(true);
-                  setHooksTooltipDismissed(true);
-                  transport.send({ type: 'setHooksInfoShown' });
-                }}
-              >
-                View more
-              </span>
-            </span>
-          </Tooltip>
-        )}
+          {editor.isEditMode && editor.isDirty && (
+            <EditActionBar editor={editor} editorState={editorState} />
+          )}
 
-        {/* Hooks info modal */}
-        <Modal
-          isOpen={isHooksInfoOpen}
-          onClose={() => setIsHooksInfoOpen(false)}
-          title="Instant Detection is ON"
-          zIndex={52}
-        >
-          <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
-            <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
-            <ul className="mb-8 pl-18 list-disc m-0">
-              <li className="text-sm mb-2">Permission prompts appear instantly</li>
-              <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
-              <li className="text-sm mb-2">Sound notifications play immediately</li>
-            </ul>
-            <p className="mb-12 text-text-muted">
-              This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-              whenever something happens in your Claude sessions.
-            </p>
-            <div className="text-center">
-              <button
-                onClick={() => setIsHooksInfoOpen(false)}
-                className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
-              >
-                Got it
-              </button>
+          {showRotateHint && (
+            <div
+              className="absolute left-1/2 -translate-x-1/2 z-11 bg-accent-bright text-white text-sm py-3 px-8 rounded-none border-2 border-accent shadow-pixel pointer-events-none whitespace-nowrap"
+              style={{ top: editor.isDirty ? 64 : 8 }}
+            >
+              Rotate (R)
             </div>
-            <p className="mt-8 text-xs text-text-muted text-center">
-              To disable, go to Settings {'>'} Instant Detection
-            </p>
-          </div>
-        </Modal>
+          )}
 
+          {editor.isEditMode &&
+            (() => {
+              const selUid = editorState.selectedFurnitureUid;
+              const selColor = selUid
+                ? (officeState.getLayout().furniture.find((f) => f.uid === selUid)?.color ?? null)
+                : null;
+              return (
+                <EditorToolbar
+                  activeTool={editorState.activeTool}
+                  selectedTileType={editorState.selectedTileType}
+                  selectedFurnitureType={editorState.selectedFurnitureType}
+                  selectedFurnitureUid={selUid}
+                  selectedFurnitureColor={selColor}
+                  floorColor={editorState.floorColor}
+                  wallColor={editorState.wallColor}
+                  selectedWallSet={editorState.selectedWallSet}
+                  onToolChange={editor.handleToolChange}
+                  onTileTypeChange={editor.handleTileTypeChange}
+                  onFloorColorChange={editor.handleFloorColorChange}
+                  onWallColorChange={editor.handleWallColorChange}
+                  onWallSetChange={editor.handleWallSetChange}
+                  onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
+                  pickedFurnitureColor={editorState.pickedFurnitureColor}
+                  onPickedFurnitureColorChange={editor.handlePickedFurnitureColorChange}
+                  onFurnitureTypeChange={editor.handleFurnitureTypeChange}
+                  loadedAssets={loadedAssets}
+                  activePetTypes={officeState.getActivePetTypes()}
+                  petCount={getPetCount()}
+                  onPetToggle={editor.handlePetToggle}
+                  carpetVariant={editor.carpetVariant}
+                  carpetColor={editor.carpetColor}
+                  carpetAccentColor={editor.carpetAccentColor}
+                  onCarpetVariantChange={editor.handleCarpetVariantChange}
+                  onCarpetColorChange={editor.handleCarpetColorChange}
+                  onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
+                  areas={officeState.getLayout().areas ?? []}
+                  selectedAreaLabel={editor.selectedAreaLabel}
+                  workspaceFolders={areaFolders}
+                  areasAvailable={areasAvailable}
+                  areaMappings={areaMappings}
+                  onSelectArea={editor.handleSelectArea}
+                  onAddArea={editor.handleAddArea}
+                  onRemoveArea={editor.handleRemoveArea}
+                  onRenameArea={editor.handleRenameArea}
+                  onAreaColorChange={editor.handleAreaColorChange}
+                  onAreaMappingChange={handleAreaMappingChange}
+                />
+              );
+            })()}
+
+          <ToolOverlay
+            officeState={officeState}
+            agents={agents}
+            agentTools={agentTools}
+            subagentCharacters={subagentCharacters}
+            containerRef={containerRef}
+            zoom={editor.zoom}
+            panRef={editor.panRef}
+            onCloseAgent={handleCloseAgent}
+            alwaysShowOverlay={alwaysShowOverlay}
+          />
+        </>
+      ) : (
+        <DebugView
+          agents={agents}
+          selectedAgent={selectedAgent}
+          agentTools={agentTools}
+          agentStatuses={agentStatuses}
+          subagentTools={subagentTools}
+          officeState={officeState}
+          onSelectAgent={handleSelectAgent}
+        />
+      )}
+
+      {/* Hooks first-run tooltip */}
+      {!hooksInfoShown && !hooksTooltipDismissed && (
+        <Tooltip
+          title="Instant Detection Active"
+          position="top-right"
+          onDismiss={() => {
+            setHooksTooltipDismissed(true);
+            transport.send({ type: 'setHooksInfoShown' });
+          }}
+        >
+          <span className="text-sm text-text leading-none">
+            Your agents now respond in real-time.{' '}
+            <span
+              className="text-accent cursor-pointer underline"
+              onClick={() => {
+                setIsHooksInfoOpen(true);
+                setHooksTooltipDismissed(true);
+                transport.send({ type: 'setHooksInfoShown' });
+              }}
+            >
+              View more
+            </span>
+          </span>
+        </Tooltip>
+      )}
+
+      {/* Hooks info modal */}
+      <Modal
+        isOpen={isHooksInfoOpen}
+        onClose={() => setIsHooksInfoOpen(false)}
+        title="Instant Detection is ON"
+        zIndex={52}
+      >
+        <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
+          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
+          <ul className="mb-8 pl-18 list-disc m-0">
+            <li className="text-sm mb-2">Permission prompts appear instantly</li>
+            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
+            <li className="text-sm mb-2">Sound notifications play immediately</li>
+          </ul>
+          <p className="mb-12 text-text-muted">
+            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
+            whenever something happens in your Claude sessions.
+          </p>
+          <div className="text-center">
+            <button
+              onClick={() => setIsHooksInfoOpen(false)}
+              className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
+            >
+              Got it
+            </button>
+          </div>
+          <p className="mt-8 text-xs text-text-muted text-center">
+            To disable, go to Settings {'>'} Instant Detection
+          </p>
+        </div>
+      </Modal>
+
+      {!isMobile && (
         <BottomToolbar
           isEditMode={editor.isEditMode}
           onOpenClaude={editor.handleOpenClaude}
@@ -596,34 +717,120 @@ function App() {
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
         />
+      )}
 
-        <VersionIndicator
-          currentVersion={extensionVersion}
-          lastSeenVersion={lastSeenVersion}
-          onDismiss={handleWhatsNewDismiss}
-          onOpenChangelog={handleOpenChangelog}
-        />
+      {/* Mobile: Settings floats top-left (the layout editor stays desktop-
+            only — its tools are drag/hover-driven). */}
+      {isMobile && !isDebugMode && (
+        <div className="absolute top-8 left-8 z-20">
+          <Button
+            size="sm"
+            variant={isSettingsOpen ? 'active' : 'default'}
+            className="border-border! shadow-pixel"
+            onClick={() => setIsSettingsOpen((v) => !v)}
+          >
+            Settings
+          </Button>
+        </div>
+      )}
 
-        <ConnectionIndicator />
-      </div>
+      <VersionIndicator
+        currentVersion={extensionVersion}
+        lastSeenVersion={lastSeenVersion}
+        onDismiss={handleWhatsNewDismiss}
+        onOpenChangelog={handleOpenChangelog}
+      />
 
-      {/* Standalone only: terminalAvailable is only ever true when the server
-          reports a working PTY, which VS Code's surface never does. In flow as a
-          flex sibling so the office region reflows beside it instead of being
-          overlaid. */}
-      {terminalAvailable && (
-        <TerminalDrawer
-          agentIds={terminalAgentIds}
-          activeAgentId={activeTerminalAgentId}
-          onSelectAgent={handleSelectTerminal}
-          onCloseAgent={handleCloseAgent}
-          isOpen={isTerminalOpen}
-          onClosePanel={() => setIsTerminalOpen(false)}
-          widthPx={terminalWidthPx}
-          onResizeStart={handleTerminalResizeStart}
-          getAppearance={getAgentAppearance}
-          getActivity={getAgentActivity}
-        />
+      <ConnectionIndicator />
+    </div>
+  );
+
+  return (
+    // Desktop: split view — the office region flexes to fill the space left of
+    // the terminal panel. Mobile: a column — the sliding office/terminal track
+    // on top, the agent-card bar pinned along the bottom.
+    <div
+      className={`w-full h-full relative overflow-hidden flex ${isMobile ? 'flex-col' : ''}`}
+      style={
+        isMobile && keyboardViewportHeight !== null ? { height: keyboardViewportHeight } : undefined
+      }
+    >
+      {isMobile ? (
+        <>
+          <div className="relative flex-1 min-h-0 overflow-hidden">
+            {/* Sliding track: office and terminal side by side at 200% width;
+                selecting a terminal slides one viewport-width left. Both pages
+                keep real layout at all times (never display:none), so the
+                canvas ResizeObserver and xterm's fit always see dimensions. */}
+            <div
+              className="absolute top-0 bottom-0 left-0 flex w-[200%]"
+              style={{
+                transform: mobileView === 'terminal' ? 'translateX(-50%)' : 'translateX(0)',
+                transition: `transform ${MOBILE_VIEW_TRANSITION_MS}ms ease-out`,
+              }}
+            >
+              <div className="w-1/2 h-full relative overflow-hidden">{officeRegion}</div>
+              <div className="w-1/2 h-full">
+                <MobileTerminalPage
+                  agentIds={terminalAgentIds}
+                  activeAgentId={activeTerminalAgentId}
+                  onStatusChange={handleMobileTermStatus}
+                />
+              </div>
+            </div>
+
+            {/* View toggle — pinned outside the track so it never slides. */}
+            {terminalAvailable && (
+              <div className="absolute top-8 right-8 z-40">
+                <Button
+                  size="sm"
+                  className="border-border! shadow-pixel"
+                  onClick={() => setMobileView((v) => (v === 'office' ? 'terminal' : 'office'))}
+                  title={mobileView === 'office' ? 'Show terminal' : 'Show office'}
+                >
+                  {mobileView === 'office' ? '>_' : 'Office'}
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <MobileAgentBar
+            agentIds={agents}
+            focusedAgentId={focusedAgentId}
+            activeTerminalAgentId={activeTerminalAgentId}
+            view={mobileView}
+            onSelectAgent={handleMobileCardSelect}
+            onCloseAgent={handleCloseAgent}
+            onLaunch={handleMobileLaunch}
+            canLaunch={terminalAvailable}
+            launchUnavailableReason={terminalUnavailableReason}
+            getAppearance={getAgentAppearance}
+            statusFor={mobileStatusFor}
+          />
+        </>
+      ) : (
+        <>
+          {officeRegion}
+
+          {/* Standalone only: terminalAvailable is only ever true when the server
+              reports a working PTY, which VS Code's surface never does. In flow as a
+              flex sibling so the office region reflows beside it instead of being
+              overlaid. */}
+          {terminalAvailable && (
+            <TerminalDrawer
+              agentIds={terminalAgentIds}
+              activeAgentId={activeTerminalAgentId}
+              onSelectAgent={handleSelectTerminal}
+              onCloseAgent={handleCloseAgent}
+              isOpen={isTerminalOpen}
+              onClosePanel={() => setIsTerminalOpen(false)}
+              widthPx={terminalWidthPx}
+              onResizeStart={handleTerminalResizeStart}
+              getAppearance={getAgentAppearance}
+              getActivity={getAgentActivity}
+            />
+          )}
+        </>
       )}
 
       <ChangelogModal
