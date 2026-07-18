@@ -157,6 +157,14 @@ export function TerminalPane({
     };
     const onTouchStart = (e: TouchEvent) => {
       e.stopPropagation();
+      // Pre-empt iOS's long-press recognizer too: it's a NO-movement gesture,
+      // so the touchmove preventDefault below can't stop it — rest a finger
+      // for a beat before dragging (half of natural scrolls) and the text
+      // loupe on the editable helper textarea claims the touch, fires
+      // touchcancel, and the rest of the drag is dead. Nothing native is
+      // wanted from terminal touches: taps focus explicitly in touchend, so
+      // even the synthesized click this suppresses isn't needed.
+      if (e.cancelable) e.preventDefault();
       stopFlick();
       const t = e.touches[0];
       if (!t || e.touches.length !== 1) {
@@ -236,7 +244,7 @@ export function TerminalPane({
       e.stopPropagation();
       flick.tracking = false;
     };
-    host.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    host.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });
     host.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
     host.addEventListener('touchend', onTouchEnd, { capture: true });
     host.addEventListener('touchcancel', onTouchCancel, { capture: true });
