@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import {
+  BUBBLE_FADE_DURATION_SEC,
+  BUBBLE_SITTING_OFFSET_PX,
+  BUBBLE_VERTICAL_OFFSET_PX,
   CHARACTER_SITTING_OFFSET_PX,
   FUEL_COLOR_CRITICAL,
   FUEL_COLOR_DANGER,
@@ -20,6 +23,8 @@ import {
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
+import { getCachedSprite } from '../sprites/spriteCache.js';
+import { BUBBLE_PERMISSION_SPRITE, BUBBLE_WAITING_SPRITE } from '../sprites/spriteData.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
 
@@ -80,6 +85,27 @@ function getFuelColor(ratio: number): string {
   return FUEL_COLOR_OK;
 }
 
+/** A speech-bubble sprite blitted into a DOM canvas. Bubbles live in the DOM
+ *  (not the office canvas) so they can stack ABOVE the status label panels —
+ *  canvas content can never out-paint the DOM overlay. */
+function OverlayBubble({ cached, dpr }: { cached: HTMLCanvasElement; dpr: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = cached.width;
+    canvas.height = cached.height;
+    canvas.getContext('2d')?.drawImage(cached, 0, 0);
+  }, [cached]);
+  return (
+    <canvas
+      ref={canvasRef}
+      className="block"
+      style={{ width: cached.width / dpr, height: cached.height / dpr }}
+    />
+  );
+}
+
 export function ToolOverlay({
   officeState,
   agents,
@@ -130,8 +156,47 @@ export function ToolOverlay({
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
 
-        // Only show for hovered or selected agents (unless always-show is on)
-        if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
+        // Speech bubble (permission dots / done checkmark) — rendered here in
+        // the DOM, above the label panels (zIndex 43 > panel 41/42), for every
+        // character regardless of label visibility. Mirrors the geometry the
+        // canvas renderer used. The idle "Waiting for input" state speaks
+        // through its label, not a bubble.
+        let bubbleNode = null;
+        if (ch.bubbleType && !(ch.bubbleType === 'waiting' && ch.waitingAwaitingInput)) {
+          const cachedBubble = getCachedSprite(
+            ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE,
+            zoom,
+          );
+          const bubbleSittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0;
+          const alpha =
+            ch.bubbleType === 'waiting' && ch.bubbleTimer < BUBBLE_FADE_DURATION_SEC
+              ? ch.bubbleTimer / BUBBLE_FADE_DURATION_SEC
+              : 1;
+          bubbleNode = (
+            <div
+              className="absolute -translate-x-1/2 pointer-events-none"
+              style={{
+                left: (deviceOffsetX + ch.x * zoom) / dpr,
+                top:
+                  (deviceOffsetY +
+                    (ch.y + bubbleSittingOff - BUBBLE_VERTICAL_OFFSET_PX) * zoom -
+                    cachedBubble.height -
+                    zoom) /
+                  dpr,
+                opacity: alpha,
+                zIndex: 43,
+              }}
+            >
+              <OverlayBubble cached={cachedBubble} dpr={dpr} />
+            </div>
+          );
+        }
+
+        // Only show the label for hovered or selected agents (unless
+        // always-show is on) — the bubble renders regardless.
+        if (!alwaysShowOverlay && !isSelected && !isHovered) {
+          return bubbleNode && <Fragment key={id}>{bubbleNode}</Fragment>;
+        }
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -148,13 +213,15 @@ export function ToolOverlay({
         const isDone = ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
         if (isDone && !isSelected && !isHovered) {
           return (
-            <div
-              key={id}
-              className="absolute"
-              style={{ left: screenX, top: screenY, pointerEvents: 'none' }}
-              data-testid="agent-overlay"
-              data-agent-id={id}
-            />
+            <Fragment key={id}>
+              {bubbleNode}
+              <div
+                className="absolute"
+                style={{ left: screenX, top: screenY, pointerEvents: 'none' }}
+                data-testid="agent-overlay"
+                data-agent-id={id}
+              />
+            </Fragment>
           );
         }
 
@@ -205,89 +272,91 @@ export function ToolOverlay({
         const hasExtraLines = !!(ch.folderName || teamRoleLabel);
 
         return (
-          <div
-            key={id}
-            className="absolute flex flex-col items-center -translate-x-1/2"
-            style={{
-              left: screenX,
-              top: screenY - (hasExtraLines ? 34 : 28),
-              pointerEvents: isSelected ? 'auto' : 'none',
-              opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
-              zIndex: isSelected ? 42 : 41,
-            }}
-            data-testid="agent-overlay"
-            data-agent-id={id}
-          >
-            <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
-              {dotColor && (
-                <span
-                  className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission && !hasWaiting ? 'pixel-pulse' : ''}`}
-                  style={{ background: dotColor }}
-                />
-              )}
-              <div className="flex flex-col gap-0 overflow-hidden">
-                {teamRoleLabel && (
+          <Fragment key={id}>
+            {bubbleNode}
+            <div
+              className="absolute flex flex-col items-center -translate-x-1/2"
+              style={{
+                left: screenX,
+                top: screenY - (hasExtraLines ? 34 : 28),
+                pointerEvents: isSelected ? 'auto' : 'none',
+                opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
+                zIndex: isSelected ? 42 : 41,
+              }}
+              data-testid="agent-overlay"
+              data-agent-id={id}
+            >
+              <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
+                {dotColor && (
+                  <span
+                    className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission && !hasWaiting ? 'pixel-pulse' : ''}`}
+                    style={{ background: dotColor }}
+                  />
+                )}
+                <div className="flex flex-col gap-0 overflow-hidden">
+                  {teamRoleLabel && (
+                    <span
+                      className="overflow-hidden text-ellipsis block leading-none"
+                      style={{
+                        fontSize: '18px',
+                        color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
+                        fontWeight: ch.isTeamLead ? 'bold' : undefined,
+                      }}
+                    >
+                      {teamRoleLabel}
+                    </span>
+                  )}
                   <span
                     className="overflow-hidden text-ellipsis block leading-none"
                     style={{
-                      fontSize: '18px',
-                      color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
-                      fontWeight: ch.isTeamLead ? 'bold' : undefined,
+                      fontSize: isSub ? '20px' : '22px',
+                      fontStyle: isSub ? 'italic' : undefined,
                     }}
                   >
-                    {teamRoleLabel}
+                    {activityText}
                   </span>
-                )}
-                <span
-                  className="overflow-hidden text-ellipsis block leading-none"
-                  style={{
-                    fontSize: isSub ? '20px' : '22px',
-                    fontStyle: isSub ? 'italic' : undefined,
-                  }}
-                >
-                  {activityText}
-                </span>
-                {ch.folderName && (
-                  <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
-                    {ch.folderName}
-                  </span>
+                  {ch.folderName && (
+                    <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
+                      {ch.folderName}
+                    </span>
+                  )}
+                </div>
+                {isSelected && !isSub && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseAgent(id);
+                    }}
+                    title="Close agent"
+                    className="ml-2 shrink-0 leading-none"
+                  >
+                    ×
+                  </Button>
                 )}
               </div>
-              {isSelected && !isSub && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCloseAgent(id);
-                  }}
-                  title="Close agent"
-                  className="ml-2 shrink-0 leading-none"
-                >
-                  ×
-                </Button>
-              )}
-            </div>
-            {isTeamAgent && totalTokens > 0 && (
-              <div
-                style={{
-                  width: FUEL_GAUGE_WIDTH_PX,
-                  height: FUEL_GAUGE_HEIGHT_PX,
-                  background: FUEL_GAUGE_BG,
-                  marginTop: 2,
-                }}
-                title={`${Math.round(tokenRatio * 100)}% context used (${(totalTokens / 1000).toFixed(0)}k tokens)`}
-              >
+              {isTeamAgent && totalTokens > 0 && (
                 <div
                   style={{
-                    width: `${Math.min(tokenRatio * 100, 100)}%`,
-                    height: '100%',
-                    background: getFuelColor(tokenRatio),
+                    width: FUEL_GAUGE_WIDTH_PX,
+                    height: FUEL_GAUGE_HEIGHT_PX,
+                    background: FUEL_GAUGE_BG,
+                    marginTop: 2,
                   }}
-                />
-              </div>
-            )}
-          </div>
+                  title={`${Math.round(tokenRatio * 100)}% context used (${(totalTokens / 1000).toFixed(0)}k tokens)`}
+                >
+                  <div
+                    style={{
+                      width: `${Math.min(tokenRatio * 100, 100)}%`,
+                      height: '100%',
+                      background: getFuelColor(tokenRatio),
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </Fragment>
         );
       })}
     </>
