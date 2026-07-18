@@ -19,7 +19,9 @@ export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogMod
       onClose={onClose}
       title={<span className="text-4xl">What's New in v{entry.version}</span>}
       zIndex={51}
-      className="min-w-sm!"
+      // min-width loses to the viewport on phones — min-width beats max-width
+      // in CSS, so an unconditional min-w-sm would re-clip what Modal caps.
+      className="min-w-[min(384px,calc(100dvw-16px))]!"
     >
       {/* Body */}
       <div className="py-4 px-10 max-h-[60vh] overflow-y-auto">
