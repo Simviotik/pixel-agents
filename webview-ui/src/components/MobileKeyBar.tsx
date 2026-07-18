@@ -1,7 +1,13 @@
 import type { TouchEvent as ReactTouchEvent } from 'react';
 import { useRef } from 'react';
 
-import { MOBILE_KEY_BAR_KEYS, TOUCH_TAP_MAX_MOVE_PX } from '../constants.js';
+import {
+  MOBILE_ARROW_SLIDE_STEP_PX,
+  MOBILE_KEY_BAR_KEYS,
+  TERMINAL_SEQ_ARROW_DOWN,
+  TERMINAL_SEQ_ARROW_UP,
+  TOUCH_TAP_MAX_MOVE_PX,
+} from '../constants.js';
 
 interface MobileKeyBarProps {
   /** Writes the key's byte sequence to the active terminal's PTY. */
@@ -37,6 +43,44 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
       Math.abs(t.clientY - s.y) <= TOUCH_TAP_MAX_MOVE_PX
     );
   };
+  // Arrow keys act as a vertical trackpad, echoing the iOS space-bar
+  // gesture: the touch sends its own arrow immediately, then holding and
+  // sliding repeats up/down arrows every MOBILE_ARROW_SLIDE_STEP_PX of
+  // travel, in whichever direction the finger moves — so one press-and-drag
+  // walks a /resume or /model menu. `sent` tracks emitted steps so backing
+  // up retraces them.
+  const slideRef = useRef<{ startY: number; sent: number } | null>(null);
+  // No preventDefault here: React registers touchstart passively, so it
+  // would be a no-op anyway. The touch-none/select-none classes keep iOS's
+  // long-press machinery off the held key, and onArrowTouchEnd's
+  // preventDefault (touchend is non-passive) suppresses the synthesized
+  // click.
+  const onArrowTouchStart = (sequence: string) => (e: ReactTouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    slideRef.current = { startY: t.clientY, sent: 0 };
+    onKey(sequence);
+  };
+  const onArrowTouchMove = (e: ReactTouchEvent) => {
+    const s = slideRef.current;
+    const t = e.touches[0];
+    if (!s || !t) return;
+    const steps = Math.trunc((t.clientY - s.startY) / MOBILE_ARROW_SLIDE_STEP_PX);
+    while (s.sent < steps) {
+      onKey(TERMINAL_SEQ_ARROW_DOWN);
+      s.sent++;
+    }
+    while (s.sent > steps) {
+      onKey(TERMINAL_SEQ_ARROW_UP);
+      s.sent--;
+    }
+  };
+  const onArrowTouchEnd = (e: ReactTouchEvent) => {
+    slideRef.current = null;
+    // Keep the keyboard: swallow the synthesized mousedown that would blur
+    // the terminal's textarea. The arrow was already sent on touchstart.
+    e.preventDefault();
+  };
   // min-w-fit keeps labels from squishing; flex-1 stretches the keys to fill
   // when there is room.
   const keyClass =
@@ -47,22 +91,35 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
     // page (iOS pans the layout viewport while the keyboard is up), which
     // pan-x alone already rules out.
     <div className="shrink-0 flex items-stretch gap-6 px-8 py-6 bg-bg border-t-2 border-border overflow-x-auto touch-pan-x">
-      {MOBILE_KEY_BAR_KEYS.map(({ label, sequence }) => (
+      {MOBILE_KEY_BAR_KEYS.map(({ label, sequence, slideArrows }) => (
         <button
           key={label}
-          onTouchStart={onKeyTouchStart}
+          onTouchStart={slideArrows ? onArrowTouchStart(sequence) : onKeyTouchStart}
+          onTouchMove={slideArrows ? onArrowTouchMove : undefined}
+          onTouchCancel={
+            slideArrows
+              ? () => {
+                  slideRef.current = null;
+                }
+              : undefined
+          }
           // preventDefault on touchend swallows the synthesized mousedown that
           // would blur the terminal's textarea and dismiss the keyboard — the
           // key is sent here and the suppressed click never fires.
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            if (endedAsTap(e)) onKey(sequence);
-          }}
+          onTouchEnd={
+            slideArrows
+              ? onArrowTouchEnd
+              : (e) => {
+                  e.preventDefault();
+                  if (endedAsTap(e)) onKey(sequence);
+                }
+          }
           // Mouse path (desktop emulation): block the focus steal on mousedown,
-          // send on click.
+          // send on click. Touch never double-sends an arrow here — the
+          // touchend preventDefault suppresses the synthesized click.
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onKey(sequence)}
-          className={keyClass}
+          className={`${keyClass}${slideArrows ? ' touch-none select-none' : ''}`}
         >
           {label}
         </button>
