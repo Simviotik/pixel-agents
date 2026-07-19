@@ -1,0 +1,13 @@
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["node esbuild.js --production", "cd webview-ui && npm run build"]
+
+[start]
+cmd = "node dist/cli.js --host 0.0.0.0 --port 3000"
