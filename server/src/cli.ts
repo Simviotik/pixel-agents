@@ -22,7 +22,7 @@ import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.
 import { readConfig } from './configPersistence.js';
 import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript } from './providers/index.js';
+import { calajanProvider, claudeProvider, copyHookScript, n8nProvider } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -117,9 +117,32 @@ async function main(): Promise<void> {
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
 
-    // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
+    // Simviotik fork: CALAJAN and n8n aren't coding CLIs, they get their own
+    // HookProvider + AgentRuntime (server/src/providers/hook/{calajan,n8n}/).
+    // HookEventHandler/AgentRuntime are built around ONE bound provider each
+    // (see docs/superpowers/specs/2026-07-20-simviotik-live-v2-pixel-agents-design.md
+    // for why) -- so instead of forking that internal routing, we run 3
+    // runtimes side by side, all sharing the SAME store (`store` above), and
+    // dispatch each incoming event to the right one by providerId below.
+    // `runtime` (claude) stays the one passed to server.start() -- it's the
+    // only provider with project-scanning/external-session features, which
+    // stay Claude-specific.
+    const calajanRuntime = new AgentRuntime(store, calajanProvider);
+    const n8nRuntime = new AgentRuntime(store, n8nProvider);
+    const runtimesByProviderId: Record<string, AgentRuntime> = {
+      claude: runtime,
+      calajan: calajanRuntime,
+      n8n: n8nRuntime,
+    };
+
+    // Wire hook events: HTTP POST -> matching runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
-      runtime.handleHookEvent(providerId, event);
+      const target = runtimesByProviderId[providerId];
+      if (!target) {
+        console.warn(`[Pixel Agents] Unknown provider "${providerId}", dropping event`);
+        return;
+      }
+      target.handleHookEvent(providerId, event);
     });
 
     // onSetHooksEnabled side effect: install/uninstall hooks when user toggles in UI.
@@ -222,6 +245,8 @@ async function main(): Promise<void> {
     function shutdown(): void {
       console.log('\nShutting down...');
       runtime.dispose();
+      calajanRuntime.dispose();
+      n8nRuntime.dispose();
       server.stop();
       process.exit(0);
     }

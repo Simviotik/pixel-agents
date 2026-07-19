@@ -11,5 +11,7 @@
  * than reaching into each provider directory directly.
  */
 
+export { calajanProvider } from './hook/calajan/calajan.js';
 export { claudeProvider } from './hook/claude/claude.js';
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export { n8nProvider } from './hook/n8n/n8n.js';

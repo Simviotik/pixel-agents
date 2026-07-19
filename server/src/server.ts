@@ -91,7 +91,11 @@ export class PixelAgentsServer {
     }
 
     // Start our own server
-    const token = crypto.randomUUID();
+    // Simviotik fork: allow a stable token via env var (remote deployments need
+    // the token to survive redeploys, since manually-installed hooks on other
+    // machines/services hardcode it — a fresh randomUUID() every boot would
+    // break them silently).
+    const token = process.env.PIXEL_AGENTS_TOKEN ?? crypto.randomUUID();
     const store = options?.store;
 
     const { app, port } = await createHttpServer({

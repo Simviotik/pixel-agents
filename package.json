@@ -117,9 +117,6 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@asyncapi/cli": "^6.0.0",
-    "@asyncapi/html-template": "^3.5.6",
-    "@asyncapi/modelina": "^5.10.1",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",
