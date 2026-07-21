@@ -1,4 +1,4 @@
-import { ZOOM_DEFAULT_DPR_FACTOR, ZOOM_MIN } from '../constants.js';
+import { TILE_SIZE, ZOOM_MAX, ZOOM_MIN } from '../constants.js';
 
 /** Map status prefixes back to tool names for animation selection */
 const STATUS_TO_TOOL: Record<string, string> = {
@@ -21,10 +21,21 @@ export function extractToolName(status: string): string | null {
   return first || null;
 }
 
-/** Compute a default integer zoom level (device pixels per sprite pixel) */
+/**
+ * Compute a default integer zoom level, fit to the viewport rather than only
+ * to devicePixelRatio (Simviotik fork). The upstream DPR-only formula left
+ * the office looking like a small island in a lot of empty background on any
+ * screen bigger than a compact laptop panel, and undershot badly on small
+ * high-DPR phones in the other direction. Fit-to-viewport works for both:
+ * aim to fill most of the smaller viewport dimension with the ~21-tile
+ * default office layout, clamped to the app's existing zoom bounds.
+ */
 export function defaultZoom(): number {
-  const dpr = window.devicePixelRatio || 1;
-  return Math.max(ZOOM_MIN, Math.round(ZOOM_DEFAULT_DPR_FACTOR * dpr));
+  const ASSUMED_OFFICE_TILES = 21;
+  const FILL_RATIO = 0.85;
+  const smallerDimension = Math.min(window.innerWidth, window.innerHeight);
+  const fitZoom = (smallerDimension * FILL_RATIO) / (ASSUMED_OFFICE_TILES * TILE_SIZE);
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(fitZoom)));
 }
 
 // ── Provider capabilities (tool taxonomy for rendering decisions) ────────────
