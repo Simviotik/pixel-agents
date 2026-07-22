@@ -207,8 +207,12 @@ export interface Character {
    *  false/undefined when the agent simply finished its turn (checkmark only,
    *  label falls through to idle). */
   waitingAwaitingInput?: boolean;
-  /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
+  /** Bubble timer: counts DOWN for 'waiting' (2→0, fade+dismiss), counts UP for
+   *  'permission' (0→∞, drives the jump-alert decay envelope in the renderer). */
   bubbleTimer: number;
+  /** Facing direction saved when the permission alert starts, restored when it
+   *  clears. Simviotik fork, pixel-agents-hq/pixel-agents#286 (face camera). */
+  prePermissionDir: Direction | null;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number;
   /** Whether this character represents a sub-agent (spawned by Task tool) */

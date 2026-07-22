@@ -1,0 +1,27 @@
+{
+  "name": "bubble-alert",
+  "description": "Permission alert bubble: red square with white '!' and a tail pointer (11x13). Simviotik fork, pixel-agents-hq/pixel-agents#286 — replaces the amber '...' bubble for a more noticeable permission request.",
+  "width": 11,
+  "height": 13,
+  "palette": {
+    "_": "",
+    "B": "#555566",
+    "R": "#D14249",
+    "W": "#EEEEFF"
+  },
+  "pixels": [
+    ["B","B","B","B","B","B","B","B","B","B","B"],
+    ["B","R","R","R","R","W","R","R","R","R","B"],
+    ["B","R","R","R","R","W","R","R","R","R","B"],
+    ["B","R","R","R","R","W","R","R","R","R","B"],
+    ["B","R","R","R","R","W","R","R","R","R","B"],
+    ["B","R","R","R","R","R","R","R","R","R","B"],
+    ["B","R","R","R","R","W","R","R","R","R","B"],
+    ["B","R","R","R","R","R","R","R","R","R","B"],
+    ["B","R","R","R","R","R","R","R","R","R","B"],
+    ["B","B","B","B","B","B","B","B","B","B","B"],
+    ["_","_","_","_","B","B","B","_","_","_","_"],
+    ["_","_","_","_","_","B","_","_","_","_","_"],
+    ["_","_","_","_","_","_","_","_","_","_","_"]
+  ]
+}

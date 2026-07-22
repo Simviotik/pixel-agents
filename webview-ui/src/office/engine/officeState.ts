@@ -788,6 +788,14 @@ export class OfficeState {
   showPermissionBubble(id: number): void {
     const ch = this.characters.get(id);
     if (ch) {
+      // Face the camera (down) while alerting, saving the direction to restore
+      // once the alert clears. Guard against re-entry (a second permission
+      // event while already alerting) overwriting the saved direction with
+      // DOWN. Simviotik fork, pixel-agents-hq/pixel-agents#286.
+      if (ch.bubbleType !== 'permission') {
+        ch.prePermissionDir = ch.dir;
+      }
+      ch.dir = Direction.DOWN;
       ch.bubbleType = 'permission';
       ch.bubbleTimer = 0;
     }
@@ -796,6 +804,10 @@ export class OfficeState {
   clearPermissionBubble(id: number): void {
     const ch = this.characters.get(id);
     if (ch && ch.bubbleType === 'permission') {
+      if (ch.prePermissionDir !== null) {
+        ch.dir = ch.prePermissionDir;
+        ch.prePermissionDir = null;
+      }
       ch.bubbleType = null;
       ch.bubbleTimer = 0;
     }
@@ -1013,6 +1025,11 @@ export class OfficeState {
           ch.bubbleType = null;
           ch.bubbleTimer = 0;
         }
+      } else if (ch.bubbleType === 'permission') {
+        // Counts UP (elapsed seconds since the alert started) -- the renderer
+        // uses it to drive the jump-alert decay envelope, clamped there once
+        // past PERMISSION_JUMP_DURATION_SEC. Simviotik fork, #286.
+        ch.bubbleTimer += dt;
       }
     }
     // Remove characters that finished despawn

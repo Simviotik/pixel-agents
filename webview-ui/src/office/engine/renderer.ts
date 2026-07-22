@@ -33,6 +33,9 @@ import {
   GRID_LINE_COLOR,
   HOVERED_OUTLINE_ALPHA,
   OUTLINE_Z_SORT_OFFSET,
+  PERMISSION_BOUNCE_COUNT,
+  PERMISSION_JUMP_DURATION_SEC,
+  PERMISSION_JUMP_HEIGHT_PX,
   ROTATE_BUTTON_BG,
   SEAT_AVAILABLE_COLOR,
   SEAT_BUSY_COLOR,
@@ -52,8 +55,8 @@ import {
 import { getPetSprites } from '../sprites/petSpriteData.js';
 import { getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js';
 import {
+  BUBBLE_ALERT_SPRITE,
   BUBBLE_HEART_SPRITE,
-  BUBBLE_PERMISSION_SPRITE,
   BUBBLE_WAITING_SPRITE,
   getCharacterSprites,
 } from '../sprites/spriteData.js';
@@ -372,9 +375,14 @@ export function renderScene(
     const cached = getCachedSprite(spriteData, zoom);
     // Sitting offset: shift character down when seated so they visually sit in the chair
     const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+    // Permission jump alert (Simviotik fork, #286): lift the sprite while bouncing.
+    const jumpOffsetPx =
+      ch.bubbleType === 'permission' ? permissionJumpOffsetPx(ch.bubbleTimer, zoom) : 0;
     // Anchor at bottom-center of character — round to integer device pixels
     const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
-    const drawY = Math.round(offsetY + (ch.y + sittingOffset) * zoom - cached.height);
+    const drawY = Math.round(
+      offsetY + (ch.y + sittingOffset) * zoom - cached.height - jumpOffsetPx,
+    );
 
     // Sort characters by bottom of their tile (not center) so they render
     // in front of same-row furniture (e.g. chairs) but behind furniture
@@ -727,6 +735,20 @@ function renderRotateButton(
   return { cx, cy, radius };
 }
 
+// ── Permission jump alert ────────────────────────────────────────
+// Simviotik fork, pixel-agents-hq/pixel-agents#286: the character bounces a
+// few times with decreasing height when a permission alert starts, then
+// settles (still facing the camera, still showing the red "!" bubble).
+
+/** Vertical offset in device pixels to lift the character sprite by (0 = grounded). */
+function permissionJumpOffsetPx(bubbleTimerElapsedSec: number, zoom: number): number {
+  if (bubbleTimerElapsedSec >= PERMISSION_JUMP_DURATION_SEC) return 0;
+  const progress = bubbleTimerElapsedSec / PERMISSION_JUMP_DURATION_SEC;
+  const decay = 1 - progress; // linear falloff — each bounce lands lower than the last
+  const bounce = Math.abs(Math.sin(progress * Math.PI * PERMISSION_BOUNCE_COUNT));
+  return bounce * decay * PERMISSION_JUMP_HEIGHT_PX * zoom;
+}
+
 // ── Speech bubbles ──────────────────────────────────────────────
 
 function renderBubbles(
@@ -743,8 +765,8 @@ function renderBubbles(
     // bubble, so skip the bubble for it.
     if (ch.bubbleType === 'waiting' && ch.waitingAwaitingInput) continue;
 
-    const sprite =
-      ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE;
+    // Simviotik fork, #286: red "!" alert instead of the amber "..." bubble.
+    const sprite = ch.bubbleType === 'permission' ? BUBBLE_ALERT_SPRITE : BUBBLE_WAITING_SPRITE;
 
     // Compute opacity: permission = full, waiting = fade in last 0.5s
     let alpha = 1.0;
@@ -757,9 +779,17 @@ function renderBubbles(
     // Character is anchored bottom-center at (ch.x, ch.y), sprite is 16x24
     // Place bubble above head with a small gap; follow sitting offset
     const sittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0;
+    // Follow the character's jump so the bubble doesn't float apart from it
+    // mid-bounce (Simviotik fork, #286).
+    const jumpOffsetPx =
+      ch.bubbleType === 'permission' ? permissionJumpOffsetPx(ch.bubbleTimer, zoom) : 0;
     const bubbleX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
     const bubbleY = Math.round(
-      offsetY + (ch.y + sittingOff - BUBBLE_VERTICAL_OFFSET_PX) * zoom - cached.height - 1 * zoom,
+      offsetY +
+        (ch.y + sittingOff - BUBBLE_VERTICAL_OFFSET_PX) * zoom -
+        cached.height -
+        1 * zoom -
+        jumpOffsetPx,
     );
 
     ctx.save();

@@ -52,6 +52,11 @@ export const BUTTON_LINE_WIDTH_ZOOM_FACTOR = 0.5;
 export const BUBBLE_FADE_DURATION_SEC = 0.5;
 export const BUBBLE_SITTING_OFFSET_PX = 10;
 export const BUBBLE_VERTICAL_OFFSET_PX = 24;
+// Simviotik fork: more noticeable permission alert (jump + face camera),
+// based on pixel-agents-hq/pixel-agents#286.
+export const PERMISSION_JUMP_HEIGHT_PX = 8;
+export const PERMISSION_JUMP_DURATION_SEC = 0.75;
+export const PERMISSION_BOUNCE_COUNT = 3;
 export const FALLBACK_FLOOR_COLOR = '#808080';
 
 // ── Rendering - Overlay Colors (canvas, not CSS) ─────────────

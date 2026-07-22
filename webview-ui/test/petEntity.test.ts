@@ -78,6 +78,7 @@ function makeChar(id: number, col: number, row: number): Character {
     seatId: null,
     bubbleType: null,
     bubbleTimer: 0,
+    prePermissionDir: null,
     seatTimer: 0,
     isSubagent: false,
     parentAgentId: null,
