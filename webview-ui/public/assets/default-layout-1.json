@@ -2467,6 +2467,24 @@
       "type": "SMALL_PAINTING_2",
       "col": 17,
       "row": 9
+    },
+    {
+      "uid": "decor-calajan-plant",
+      "type": "PLANT",
+      "col": 2,
+      "row": 15
+    },
+    {
+      "uid": "decor-pxa-plant",
+      "type": "PLANT",
+      "col": 16,
+      "row": 17
+    },
+    {
+      "uid": "decor-pxa-cactus",
+      "type": "CACTUS",
+      "col": 18,
+      "row": 18
     }
   ],
   "areas": [
