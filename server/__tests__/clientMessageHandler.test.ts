@@ -71,6 +71,10 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     });
 
     it('is a no-op when mappings is missing or not an object', () => {
+      // Simviotik fork: areaMappings default is baked into DEFAULT_ADAPTER_SETTINGS
+      // (not {}) since config.json doesn't survive a redeploy -- see configPersistence.ts.
+      const defaultMappings = readConfig().standalone.areaMappings;
+
       handleClientMessage({ type: 'saveAreaMappings' }, (m) => sent.push(m), ctx);
       handleClientMessage(
         { type: 'saveAreaMappings', mappings: 'not-an-object' },
@@ -79,10 +83,12 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       );
 
       const cfg = readConfig();
-      expect(cfg.standalone.areaMappings).toEqual({});
+      expect(cfg.standalone.areaMappings).toEqual(defaultMappings);
     });
 
     it('does not leak into the vscode namespace', () => {
+      const defaultMappings = readConfig().vscode.areaMappings;
+
       handleClientMessage(
         { type: 'saveAreaMappings', mappings: { frontend: ['Engineering'] } },
         (m) => sent.push(m),
@@ -91,7 +97,7 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
 
       const cfg = readConfig();
       expect(cfg.standalone.areaMappings).toEqual({ frontend: ['Engineering'] });
-      expect(cfg.vscode.areaMappings).toEqual({});
+      expect(cfg.vscode.areaMappings).toEqual(defaultMappings);
     });
   });
 
@@ -189,12 +195,16 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       expect(carpetMsgs).toHaveLength(0);
     });
 
-    it('always emits areaMappingsLoaded, even with no persisted mappings (sends {})', () => {
+    it('always emits areaMappingsLoaded, with the Simviotik default mappings when none are persisted', () => {
+      const defaultMappings = readConfig().standalone.areaMappings;
+
       handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
 
       const areaMsgs = sent.filter((m) => m.type === 'areaMappingsLoaded');
       expect(areaMsgs).toHaveLength(1);
-      expect((areaMsgs[0] as { mappings: Record<string, string[]> }).mappings).toEqual({});
+      expect((areaMsgs[0] as { mappings: Record<string, string[]> }).mappings).toEqual(
+        defaultMappings,
+      );
     });
   });
 });

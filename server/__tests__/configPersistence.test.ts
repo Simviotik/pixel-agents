@@ -85,13 +85,21 @@ describe('configPersistence: areas', () => {
   // ── readConfig / writeConfig round-trip ──────────────────────
 
   describe('readConfig + writeConfig round-trip for area settings', () => {
-    it('returns defaults (showAreas=true, areaMappings={}) when no config file exists', () => {
-      // Simviotik fork: showAreas defaults to true (see configPersistence.ts DEFAULT_ADAPTER_SETTINGS).
+    it('returns Simviotik defaults (showAreas=true, real folder mappings) when no config file exists', () => {
+      // Simviotik fork: showAreas + areaMappings are baked into DEFAULT_ADAPTER_SETTINGS
+      // because /root/.pixel-agents isn't on a persistent volume -- every redeploy
+      // wipes config.json, so this is the only mapping that survives.
+      const expectedMappings = {
+        'AGENTE IA CALAJAN': ['CALAJAN'],
+        calajan: ['CALAJAN'],
+        n8n: ['n8n'],
+        'pixel-agents': ['pixel-agents'],
+      };
       const cfg = readConfig();
       expect(cfg.vscode.showAreas).toBe(true);
-      expect(cfg.vscode.areaMappings).toEqual({});
+      expect(cfg.vscode.areaMappings).toEqual(expectedMappings);
       expect(cfg.standalone.showAreas).toBe(true);
-      expect(cfg.standalone.areaMappings).toEqual({});
+      expect(cfg.standalone.areaMappings).toEqual(expectedMappings);
     });
 
     it('round-trips showAreas + areaMappings per-namespace independently', () => {
@@ -137,7 +145,9 @@ describe('configPersistence: areas', () => {
 
       const reloaded = readConfig();
       expect(reloaded.vscode.areaMappings).toEqual({ frontend: ['Engineering'] });
-      expect(reloaded.standalone.areaMappings).toEqual({});
+      // standalone was untouched -- still whatever readConfig() gave it (the
+      // Simviotik defaults, since no config.json existed before this write).
+      expect(reloaded.standalone.areaMappings).toEqual(cfg.standalone.areaMappings);
     });
   });
 });

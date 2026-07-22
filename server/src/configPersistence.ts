@@ -47,10 +47,16 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   hooksInfoShown: false,
   // Simviotik fork: on by default -- our layout ships pre-defined department
   // Areas (CALAJAN, n8n, pixel-agents) meant to be visible, not an opt-in
-  // power-user feature. areaMappings themselves stay per-deployment config
-  // (Simviotik's real folder names), not hardcoded here.
+  // power-user feature. Mappings baked in here (not left to runtime
+  // config.json) because /root/.pixel-agents isn't on a persistent volume --
+  // every redeploy wipes it, so this is the only mapping that survives.
   showAreas: true,
-  areaMappings: {},
+  areaMappings: {
+    'AGENTE IA CALAJAN': ['CALAJAN'],
+    calajan: ['CALAJAN'],
+    n8n: ['n8n'],
+    'pixel-agents': ['pixel-agents'],
+  },
 };
 
 function getConfigFilePath(): string {
