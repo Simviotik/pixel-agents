@@ -45,7 +45,11 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   watchAllSessions: false,
   hooksEnabled: true,
   hooksInfoShown: false,
-  showAreas: false,
+  // Simviotik fork: on by default -- our layout ships pre-defined department
+  // Areas (CALAJAN, n8n, pixel-agents) meant to be visible, not an opt-in
+  // power-user feature. areaMappings themselves stay per-deployment config
+  // (Simviotik's real folder names), not hardcoded here.
+  showAreas: true,
   areaMappings: {},
 };
 
