@@ -243,6 +243,12 @@ export interface Character {
   inputTokens: number;
   /** Cumulative output tokens consumed */
   outputTokens: number;
+
+  // -- Contextual reactions (Realm-inspired) --
+  /** Elapsed seconds since an error-shake reaction started, or null when inactive. */
+  shakeTimer: number | null;
+  /** Elapsed seconds since a celebration-hop reaction started, or null when inactive. */
+  celebrateTimer: number | null;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;

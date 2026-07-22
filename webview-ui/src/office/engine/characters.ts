@@ -86,6 +86,8 @@ export function createCharacter(
     matrixEffectSeeds: [],
     inputTokens: 0,
     outputTokens: 0,
+    shakeTimer: null,
+    celebrateTimer: null,
   };
 }
 

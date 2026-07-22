@@ -427,6 +427,12 @@ export function useExtensionMessages(
             os.clearPermissionBubble(subId);
           }
         }
+      } else if (msg.type === 'agentToolError') {
+        const id = msg.id as number;
+        os.triggerShake(id);
+      } else if (msg.type === 'agentCelebrate') {
+        const id = msg.id as number;
+        os.triggerCelebrate(id);
       } else if (msg.type === 'subagentToolStart') {
         const id = msg.id as number;
         const parentToolId = msg.parentToolId as string;

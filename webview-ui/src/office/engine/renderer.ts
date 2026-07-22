@@ -19,6 +19,9 @@ import {
   BUTTON_RADIUS_ZOOM_FACTOR,
   CARPET_DEFAULT_ACCENT_COLOR,
   CARPET_DEFAULT_COLOR,
+  CELEBRATE_BOUNCE_COUNT,
+  CELEBRATE_JUMP_DURATION_SEC,
+  CELEBRATE_JUMP_HEIGHT_PX,
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_Z_SORT_OFFSET,
   DELETE_BUTTON_BG,
@@ -43,6 +46,9 @@ import {
   SELECTED_OUTLINE_ALPHA,
   SELECTION_DASH_PATTERN,
   SELECTION_HIGHLIGHT_COLOR,
+  SHAKE_AMPLITUDE_PX,
+  SHAKE_DURATION_SEC,
+  SHAKE_FREQUENCY_HZ,
   VOID_TILE_DASH_PATTERN,
   VOID_TILE_OUTLINE_COLOR,
 } from '../../constants.js';
@@ -378,10 +384,14 @@ export function renderScene(
     // Permission jump alert (Simviotik fork, #286): lift the sprite while bouncing.
     const jumpOffsetPx =
       ch.bubbleType === 'permission' ? permissionJumpOffsetPx(ch.bubbleTimer, zoom) : 0;
+    // Contextual reactions (Simviotik fork): error shake / celebration hop.
+    const shakeXOffsetPx = ch.shakeTimer !== null ? shakeOffsetPx(ch.shakeTimer, zoom) : 0;
+    const celebrateOffsetPx =
+      ch.celebrateTimer !== null ? celebrateJumpOffsetPx(ch.celebrateTimer, zoom) : 0;
     // Anchor at bottom-center of character — round to integer device pixels
-    const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
+    const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2 + shakeXOffsetPx);
     const drawY = Math.round(
-      offsetY + (ch.y + sittingOffset) * zoom - cached.height - jumpOffsetPx,
+      offsetY + (ch.y + sittingOffset) * zoom - cached.height - jumpOffsetPx - celebrateOffsetPx,
     );
 
     // Sort characters by bottom of their tile (not center) so they render
@@ -747,6 +757,28 @@ function permissionJumpOffsetPx(bubbleTimerElapsedSec: number, zoom: number): nu
   const decay = 1 - progress; // linear falloff — each bounce lands lower than the last
   const bounce = Math.abs(Math.sin(progress * Math.PI * PERMISSION_BOUNCE_COUNT));
   return bounce * decay * PERMISSION_JUMP_HEIGHT_PX * zoom;
+}
+
+// ── Contextual reactions ─────────────────────────────────────────
+// Simviotik fork: Realm-inspired reactions. Error shake on PostToolUseFailure,
+// celebration hop on a successful `git commit`.
+
+/** Horizontal offset in device pixels for the error-shake jitter (0 = centered). */
+function shakeOffsetPx(shakeTimerElapsedSec: number, zoom: number): number {
+  if (shakeTimerElapsedSec >= SHAKE_DURATION_SEC) return 0;
+  const progress = shakeTimerElapsedSec / SHAKE_DURATION_SEC;
+  const decay = 1 - progress;
+  const wave = Math.sin(progress * Math.PI * 2 * SHAKE_FREQUENCY_HZ);
+  return wave * decay * SHAKE_AMPLITUDE_PX * zoom;
+}
+
+/** Vertical offset in device pixels for the celebration hop (0 = grounded). */
+function celebrateJumpOffsetPx(celebrateTimerElapsedSec: number, zoom: number): number {
+  if (celebrateTimerElapsedSec >= CELEBRATE_JUMP_DURATION_SEC) return 0;
+  const progress = celebrateTimerElapsedSec / CELEBRATE_JUMP_DURATION_SEC;
+  const decay = 1 - progress;
+  const bounce = Math.abs(Math.sin(progress * Math.PI * CELEBRATE_BOUNCE_COUNT));
+  return bounce * decay * CELEBRATE_JUMP_HEIGHT_PX * zoom;
 }
 
 // ── Speech bubbles ──────────────────────────────────────────────

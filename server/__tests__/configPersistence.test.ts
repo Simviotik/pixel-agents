@@ -85,11 +85,12 @@ describe('configPersistence: areas', () => {
   // ── readConfig / writeConfig round-trip ──────────────────────
 
   describe('readConfig + writeConfig round-trip for area settings', () => {
-    it('returns defaults (showAreas=false, areaMappings={}) when no config file exists', () => {
+    it('returns defaults (showAreas=true, areaMappings={}) when no config file exists', () => {
+      // Simviotik fork: showAreas defaults to true (see configPersistence.ts DEFAULT_ADAPTER_SETTINGS).
       const cfg = readConfig();
-      expect(cfg.vscode.showAreas).toBe(false);
+      expect(cfg.vscode.showAreas).toBe(true);
       expect(cfg.vscode.areaMappings).toEqual({});
-      expect(cfg.standalone.showAreas).toBe(false);
+      expect(cfg.standalone.showAreas).toBe(true);
       expect(cfg.standalone.areaMappings).toEqual({});
     });
 
@@ -121,8 +122,8 @@ describe('configPersistence: areas', () => {
       );
 
       const cfg = readConfig();
-      // showAreas: 'yes please' is not a boolean → default false
-      expect(cfg.vscode.showAreas).toBe(false);
+      // showAreas: 'yes please' is not a boolean → default true (Simviotik fork default)
+      expect(cfg.vscode.showAreas).toBe(true);
       expect(cfg.vscode.areaMappings).toEqual({});
       // showAreas: true is valid; areaMappings.frontend: 'broken' is not an array → dropped
       expect(cfg.standalone.showAreas).toBe(true);

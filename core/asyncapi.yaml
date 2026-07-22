@@ -91,6 +91,8 @@ components:
         - $ref: '#/components/schemas/AgentToolsClear'
         - $ref: '#/components/schemas/AgentToolPermission'
         - $ref: '#/components/schemas/AgentToolPermissionClear'
+        - $ref: '#/components/schemas/AgentToolError'
+        - $ref: '#/components/schemas/AgentCelebrate'
         # Sub-agent activity
         - $ref: '#/components/schemas/SubagentToolStart'
         - $ref: '#/components/schemas/SubagentToolDone'
@@ -321,6 +323,30 @@ components:
       properties:
         type:
           const: agentToolPermissionClear
+        id:
+          type: integer
+
+    AgentToolError:
+      description: Agent's tool call failed (PostToolUseFailure). Drives an error-shake reaction.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentToolError
+        id:
+          type: integer
+
+    AgentCelebrate:
+      description: >-
+        Agent completed a noteworthy action (currently: a successful `git commit`
+        via Bash). Drives a celebration hop reaction.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentCelebrate
         id:
           type: integer
 

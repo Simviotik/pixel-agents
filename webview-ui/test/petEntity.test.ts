@@ -87,6 +87,8 @@ function makeChar(id: number, col: number, row: number): Character {
     matrixEffectSeeds: [],
     inputTokens: 0,
     outputTokens: 0,
+    shakeTimer: null,
+    celebrateTimer: null,
   };
 }
 

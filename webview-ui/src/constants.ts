@@ -57,6 +57,14 @@ export const BUBBLE_VERTICAL_OFFSET_PX = 24;
 export const PERMISSION_JUMP_HEIGHT_PX = 8;
 export const PERMISSION_JUMP_DURATION_SEC = 0.75;
 export const PERMISSION_BOUNCE_COUNT = 3;
+// Simviotik fork: contextual reactions (Realm-inspired) -- error shake on
+// PostToolUseFailure, celebration hop on a successful `git commit`.
+export const SHAKE_AMPLITUDE_PX = 3;
+export const SHAKE_DURATION_SEC = 0.4;
+export const SHAKE_FREQUENCY_HZ = 14;
+export const CELEBRATE_JUMP_HEIGHT_PX = 14;
+export const CELEBRATE_JUMP_DURATION_SEC = 0.9;
+export const CELEBRATE_BOUNCE_COUNT = 2;
 export const FALLBACK_FLOOR_COLOR = '#808080';
 
 // ── Rendering - Overlay Colors (canvas, not CSS) ─────────────

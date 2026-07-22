@@ -22,7 +22,13 @@ export type AgentEvent =
        *  sub-agent characters for teammate spawns. */
       runInBackground?: boolean;
     }
-  | { kind: 'toolEnd'; toolId: string }
+  | {
+      kind: 'toolEnd';
+      toolId: string;
+      /** True when the tool failed (Claude's PostToolUseFailure). Drives the
+       *  character's error-shake reaction. Absent/false = normal completion. */
+      error?: boolean;
+    }
   | {
       kind: 'turnEnd';
       /** True when the turn ended because the agent went idle waiting on the

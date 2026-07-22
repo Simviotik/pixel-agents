@@ -1,6 +1,7 @@
 import {
   AUTO_ON_FACING_DEPTH,
   AUTO_ON_SIDE_DEPTH,
+  CELEBRATE_JUMP_DURATION_SEC,
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
@@ -13,6 +14,7 @@ import {
   MAX_PET_ID_LENGTH,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
+  SHAKE_DURATION_SEC,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
@@ -813,6 +815,18 @@ export class OfficeState {
     }
   }
 
+  /** Start the error-shake reaction (tool call failed). Re-entrant: restarts the timer. */
+  triggerShake(id: number): void {
+    const ch = this.characters.get(id);
+    if (ch) ch.shakeTimer = 0;
+  }
+
+  /** Start the celebration-hop reaction (e.g. a successful `git commit`). Re-entrant. */
+  triggerCelebrate(id: number): void {
+    const ch = this.characters.get(id);
+    if (ch) ch.celebrateTimer = 0;
+  }
+
   showWaitingBubble(id: number, awaitingInput = false): void {
     const ch = this.characters.get(id);
     if (ch) {
@@ -1030,6 +1044,16 @@ export class OfficeState {
         // uses it to drive the jump-alert decay envelope, clamped there once
         // past PERMISSION_JUMP_DURATION_SEC. Simviotik fork, #286.
         ch.bubbleTimer += dt;
+      }
+
+      // Tick contextual-reaction timers (independent of bubbleType, can overlap it)
+      if (ch.shakeTimer !== null) {
+        ch.shakeTimer += dt;
+        if (ch.shakeTimer >= SHAKE_DURATION_SEC) ch.shakeTimer = null;
+      }
+      if (ch.celebrateTimer !== null) {
+        ch.celebrateTimer += dt;
+        if (ch.celebrateTimer >= CELEBRATE_JUMP_DURATION_SEC) ch.celebrateTimer = null;
       }
     }
     // Remove characters that finished despawn

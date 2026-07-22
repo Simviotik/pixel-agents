@@ -10,6 +10,16 @@ import type { AgentState } from './types.js';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
+const GIT_COMMIT_COMMAND_RE = /(^|[;&|]|\s)git\s+commit(\s|$)/;
+
+/** True when a completed tool call was a `Bash` invocation running `git commit`.
+ *  Drives the celebration reaction on successful commits. */
+function isGitCommitCall(toolName: string | undefined, toolInput: unknown): boolean {
+  if (toolName !== 'Bash') return false;
+  const command = (toolInput as Record<string, unknown> | undefined)?.command;
+  return typeof command === 'string' && GIT_COMMIT_COMMAND_RE.test(command);
+}
+
 /** Normalized hook event received from any provider's hook script via the HTTP server. */
 export interface HookEvent {
   /** Hook event name (e.g., 'Stop', 'PermissionRequest', 'Notification') */
@@ -329,10 +339,7 @@ export class HookEventHandler {
       case 'toolStart':
         return this.handlePreToolUse(normEvent, agent, agentId);
       case 'toolEnd':
-        // Both PostToolUse and PostToolUseFailure normalize to toolEnd. Distinguishing
-        // them inside handlers would require extra info; the existing behavior was
-        // identical for both (agentToolDone + clear currentHookToolId), so one branch suffices.
-        return this.handlePostToolUse(agent, agentId);
+        return this.handlePostToolUse(agent, agentId, normEvent.error === true);
       case 'subagentStart':
         return this.provider.team ? this.handleSubagentStart(event, agent, agentId) : undefined;
       case 'subagentEnd':
@@ -422,6 +429,7 @@ export class HookEventHandler {
     // It is NOT cleared in PostToolUse to survive the PostToolUse-before-SubagentStart race.
     agent.currentHookToolId = hookToolId;
     agent.currentHookToolName = toolName;
+    agent.currentHookToolInput = toolInput;
     agent.currentHookIsTeammateSpawn =
       this.provider.team?.isTeammateSpawnCall(toolName, toolInput) ?? false;
 
@@ -462,7 +470,7 @@ export class HookEventHandler {
    * Stop hook handles the idle transition. This is here for completeness and
    * to serve as a confirmation event for pending external sessions.
    */
-  private handlePostToolUse(agent: AgentState, agentId: number): void {
+  private handlePostToolUse(agent: AgentState, agentId: number, error: boolean): void {
     if (agent.currentHookToolId) {
       // Suppress tool display when lead has inline teammates (see handlePreToolUse)
       if (!hasInlineTeammates(agentId, this.agents)) {
@@ -471,15 +479,17 @@ export class HookEventHandler {
           id: agentId,
           toolId: agent.currentHookToolId,
         });
+        if (error) {
+          this.agents.broadcast({ type: 'agentToolError', id: agentId });
+        } else if (isGitCommitCall(agent.currentHookToolName, agent.currentHookToolInput)) {
+          this.agents.broadcast({ type: 'agentCelebrate', id: agentId });
+        }
       }
       agent.currentHookToolId = undefined;
       agent.currentHookToolName = undefined;
+      agent.currentHookToolInput = undefined;
     }
   }
-
-  // NOTE: PostToolUseFailure used to have its own handler. The behavior was identical
-  // to PostToolUse (emit agentToolDone, clear currentHookToolId). Both now normalize to
-  // the 'toolEnd' AgentEvent kind and share handlePostToolUse.
 
   /**
    * Handle SubagentStart: notify webview that a sub-agent is spawning.

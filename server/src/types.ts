@@ -41,6 +41,9 @@ export interface AgentState {
   /** Tool name from the most recent PreToolUse, used to correlate a later SubagentStart
    *  event with the parent tool that launched it. */
   currentHookToolName?: string;
+  /** Tool input from the most recent PreToolUse, read at PostToolUse to detect
+   *  noteworthy completions (e.g. a successful `git commit`) for reactions. */
+  currentHookToolInput?: unknown;
   /** True if the CURRENT PreToolUse tool call is a teammate spawn (per the provider's
    *  `team.isTeammateSpawnCall`). Authoritative source for teammate vs basic-subagent
    *  routing in SubagentStart. Set in PreToolUse, NOT cleared in PostToolUse (survives
