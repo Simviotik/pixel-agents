@@ -41,22 +41,15 @@ export interface PixelAgentsConfig {
 const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   soundEnabled: true,
   lastSeenVersion: '',
-  alwaysShowLabels: false,
+  // Simviotik fork: Fran tried the colored department Areas and didn't like
+  // the look ("se ve feo") -- wants agents spread anywhere in the office,
+  // identified by their always-visible name label instead of a zone.
+  alwaysShowLabels: true,
   watchAllSessions: false,
   hooksEnabled: true,
   hooksInfoShown: false,
-  // Simviotik fork: on by default -- our layout ships pre-defined department
-  // Areas (CALAJAN, n8n, pixel-agents) meant to be visible, not an opt-in
-  // power-user feature. Mappings baked in here (not left to runtime
-  // config.json) because /root/.pixel-agents isn't on a persistent volume --
-  // every redeploy wipes it, so this is the only mapping that survives.
-  showAreas: true,
-  areaMappings: {
-    'AGENTE IA CALAJAN': ['CALAJAN'],
-    calajan: ['CALAJAN'],
-    n8n: ['n8n'],
-    'pixel-agents': ['pixel-agents'],
-  },
+  showAreas: false,
+  areaMappings: {},
 };
 
 function getConfigFilePath(): string {

@@ -85,21 +85,14 @@ describe('configPersistence: areas', () => {
   // ── readConfig / writeConfig round-trip ──────────────────────
 
   describe('readConfig + writeConfig round-trip for area settings', () => {
-    it('returns Simviotik defaults (showAreas=true, real folder mappings) when no config file exists', () => {
-      // Simviotik fork: showAreas + areaMappings are baked into DEFAULT_ADAPTER_SETTINGS
-      // because /root/.pixel-agents isn't on a persistent volume -- every redeploy
-      // wipes config.json, so this is the only mapping that survives.
-      const expectedMappings = {
-        'AGENTE IA CALAJAN': ['CALAJAN'],
-        calajan: ['CALAJAN'],
-        n8n: ['n8n'],
-        'pixel-agents': ['pixel-agents'],
-      };
+    it('returns defaults (showAreas=false, areaMappings={}) when no config file exists', () => {
+      // Simviotik fork: Areas were tried and dropped (Fran didn't like the look) --
+      // showAreas/areaMappings default off. See configPersistence.ts.
       const cfg = readConfig();
-      expect(cfg.vscode.showAreas).toBe(true);
-      expect(cfg.vscode.areaMappings).toEqual(expectedMappings);
-      expect(cfg.standalone.showAreas).toBe(true);
-      expect(cfg.standalone.areaMappings).toEqual(expectedMappings);
+      expect(cfg.vscode.showAreas).toBe(false);
+      expect(cfg.vscode.areaMappings).toEqual({});
+      expect(cfg.standalone.showAreas).toBe(false);
+      expect(cfg.standalone.areaMappings).toEqual({});
     });
 
     it('round-trips showAreas + areaMappings per-namespace independently', () => {
@@ -130,8 +123,8 @@ describe('configPersistence: areas', () => {
       );
 
       const cfg = readConfig();
-      // showAreas: 'yes please' is not a boolean → default true (Simviotik fork default)
-      expect(cfg.vscode.showAreas).toBe(true);
+      // showAreas: 'yes please' is not a boolean → default false
+      expect(cfg.vscode.showAreas).toBe(false);
       expect(cfg.vscode.areaMappings).toEqual({});
       // showAreas: true is valid; areaMappings.frontend: 'broken' is not an array → dropped
       expect(cfg.standalone.showAreas).toBe(true);
