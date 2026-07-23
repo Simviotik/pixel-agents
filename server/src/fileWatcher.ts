@@ -840,9 +840,13 @@ export function adoptExternalSessionFromHook(
 
     knownJsonlFiles.add(transcriptPath);
     const projectDir = path.dirname(transcriptPath);
+    // Prefer the real cwd (unencoded, spaces intact) over the Claude project-dir
+    // hash: that hash replaces BOTH path separators and spaces with '-', so a
+    // folder like "SIMVIOTIK LAB" is indistinguishable from a "LAB" subfolder --
+    // folderNameFromProjectDir's last-segment heuristic would wrongly return "LAB".
     const folderName =
       folderNameResolver?.({ cwd, projectDir }) ??
-      folderNameFromProjectDir(path.basename(projectDir));
+      (cwd ? path.basename(cwd) : folderNameFromProjectDir(path.basename(projectDir)));
 
     adoptExternalSession(
       transcriptPath,
